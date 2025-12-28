@@ -105,6 +105,9 @@ struct PDFKitView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(url: url) }
     
     // MARK: - Canvas and Overlay
+    
+    /// Custom view that renders PDF pages using CATiledLayer for efficient multi-page rendering.
+    /// Pages are stacked vertically with full-width layout.
     class PDFCanvasView: UIView {
         var document: PDFDocument? { didSet { setNeedsLayout(); setNeedsDisplay() } }
         var pageFrames: [Int: CGRect] = [:] // canvas coordinates
@@ -183,23 +186,30 @@ struct PDFKitView: UIViewRepresentable {
         }
     }
     
+    
+    /// Transparent overlay view that draws highlights, handles, and delete buttons on top of the PDF canvas.
+    /// All drawing is done in canvas coordinate space.
     class HighlightOverlayView: UIView {
+        // MARK: - Properties
+        var highlights: [Coordinator.Highlight] = []
+        var selectedID: UUID?
+        
+        // MARK: - Initialization
         override init(frame: CGRect) {
             super.init(frame: frame)
-            isOpaque = false
-            backgroundColor = .clear
-            contentMode = .redraw
+            configureView()
         }
         
         required init?(coder: NSCoder) {
             super.init(coder: coder)
+            configureView()
+        }
+        
+        private func configureView() {
             isOpaque = false
             backgroundColor = .clear
             contentMode = .redraw
         }
-        
-        var highlights: [Coordinator.Highlight] = []
-        var selectedID: UUID?
         
         override func draw(_ rect: CGRect) {
             guard let ctx = UIGraphicsGetCurrentContext() else { return }
@@ -213,111 +223,162 @@ struct PDFKitView: UIViewRepresentable {
             for h in highlights {
                 let viewRect = h.rectInCanvas
                 let path = UIBezierPath(rect: viewRect)
-                // Constant fill alpha
-                (h.color.withAlphaComponent(0.3)).setFill()
+                h.color.withAlphaComponent(Coordinator.Constants.highlightOpacity).setFill()
                 path.fill()
+                
                 // If selected, draw a subtle border with drop shadow and edge handles
                 if h.id == selectedID {
                     ctx.saveGState()
-                    // Add subtle drop shadow
-                    ctx.setShadow(offset: CGSize(width: 1, height: 4), blur: 4, color: UIColor.black.withAlphaComponent(0.2).cgColor)
+                    ctx.setShadow(
+                        offset: CGSize(width: 1, height: 4),
+                        blur: 4,
+                        color: UIColor.black.withAlphaComponent(0.2).cgColor
+                    )
                     let strokePath = UIBezierPath(rect: viewRect.insetBy(dx: -0.5, dy: -0.5))
-                    (h.color.withAlphaComponent(0.5)).setStroke()
-                    strokePath.lineWidth = 1.5
+                    h.color.withAlphaComponent(Coordinator.Constants.selectedHighlightOpacity).setStroke()
+                    strokePath.lineWidth = Coordinator.Constants.highlightStrokeWidth
                     strokePath.stroke()
                     ctx.restoreGState()
                     
                     // Draw top and bottom edge handles
-                    let handleWidth: CGFloat = 60
-                    let handleHeight: CGFloat = 8
-                    let centerX = viewRect.midX
-                    
-                    // Top handle
-                    let topHandle = CGRect(x: centerX - handleWidth/2, y: viewRect.minY - handleHeight/2, width: handleWidth, height: handleHeight)
-                    ctx.saveGState()
-                    ctx.setShadow(offset: CGSize(width: 0, height: 1), blur: 2, color: UIColor.black.withAlphaComponent(0.3).cgColor)
-                    let topPath = UIBezierPath(roundedRect: topHandle, cornerRadius: 4)
-                    UIColor.white.setFill()
-                    topPath.fill()
-                    h.color.setStroke()
-                    topPath.lineWidth = 2
-                    topPath.stroke()
-                    ctx.restoreGState()
-                    
-                    // Bottom handle
-                    let bottomHandle = CGRect(x: centerX - handleWidth/2, y: viewRect.maxY - handleHeight/2, width: handleWidth, height: handleHeight)
-                    ctx.saveGState()
-                    ctx.setShadow(offset: CGSize(width: 0, height: 1), blur: 2, color: UIColor.black.withAlphaComponent(0.3).cgColor)
-                    let bottomPath = UIBezierPath(roundedRect: bottomHandle, cornerRadius: 4)
-                    UIColor.white.setFill()
-                    bottomPath.fill()
-                    h.color.setStroke()
-                    bottomPath.lineWidth = 2
-                    bottomPath.stroke()
-                    ctx.restoreGState()
+                    drawEdgeHandle(at: viewRect.minY, centerX: viewRect.midX, color: h.color, in: ctx)
+                    drawEdgeHandle(at: viewRect.maxY, centerX: viewRect.midX, color: h.color, in: ctx)
                     
                     // Draw delete button on the left side, slightly above the highlight
-                    let deleteButtonSize: CGFloat = 24
-                    let deleteButton = CGRect(x: viewRect.minX + 10, y: viewRect.minY - deleteButtonSize - 8, width: deleteButtonSize, height: deleteButtonSize)
-                    ctx.saveGState()
-                    ctx.setShadow(offset: CGSize(width: 0, height: 4), blur: 8, color: UIColor.black.withAlphaComponent(0.4).cgColor)
-                    let deletePath = UIBezierPath(ovalIn: deleteButton)
-                    UIColor.white.setFill()
-                    deletePath.fill()
-                    
-                    // Draw trash icon using SF Symbol
-                    let iconConfig = UIImage.SymbolConfiguration(pointSize: deleteButtonSize / 2, weight: .medium)
-                    if let trashIcon = UIImage(systemName: "trash.fill", withConfiguration: iconConfig) {
-                        let iconSize = trashIcon.size
-                        let iconRect = CGRect(
-                            x: deleteButton.midX - iconSize.width / 2,
-                            y: deleteButton.midY - iconSize.height / 2,
-                            width: iconSize.width,
-                            height: iconSize.height
-                        )
-                        ctx.restoreGState()
-                        ctx.saveGState()
-                        UIColor.systemRed.setFill()
-                        trashIcon.draw(in: iconRect, blendMode: .normal, alpha: 0.8)
-                    }
-                    ctx.restoreGState()
+                    drawDeleteButton(for: viewRect, in: ctx)
                 }
             }
             ctx.restoreGState()
         }
+        
+        // MARK: - Drawing Helpers
+        private func drawEdgeHandle(at y: CGFloat, centerX: CGFloat, color: UIColor, in ctx: CGContext) {
+            let handleRect = CGRect(
+                x: centerX - Coordinator.Constants.handleWidth / 2,
+                y: y - Coordinator.Constants.handleHeight / 2,
+                width: Coordinator.Constants.handleWidth,
+                height: Coordinator.Constants.handleHeight
+            )
+            
+            ctx.saveGState()
+            ctx.setShadow(
+                offset: CGSize(width: 0, height: 1),
+                blur: 2,
+                color: UIColor.black.withAlphaComponent(0.3).cgColor
+            )
+            
+            let path = UIBezierPath(roundedRect: handleRect, cornerRadius: Coordinator.Constants.handleCornerRadius)
+            UIColor.white.setFill()
+            path.fill()
+            color.setStroke()
+            path.lineWidth = Coordinator.Constants.handleStrokeWidth
+            path.stroke()
+            ctx.restoreGState()
+        }
+        
+        private func drawDeleteButton(for rect: CGRect, in ctx: CGContext) {
+            let size = Coordinator.Constants.deleteButtonSize
+            let buttonRect = CGRect(
+                x: rect.minX + Coordinator.Constants.deleteButtonInset,
+                y: rect.minY - size - Coordinator.Constants.deleteButtonOffset,
+                width: size,
+                height: size
+            )
+            
+            ctx.saveGState()
+            ctx.setShadow(
+                offset: CGSize(width: 0, height: 4),
+                blur: 8,
+                color: UIColor.black.withAlphaComponent(0.4).cgColor
+            )
+            
+            let path = UIBezierPath(ovalIn: buttonRect)
+            UIColor.white.setFill()
+            path.fill()
+            ctx.restoreGState()
+            
+            // Draw trash icon
+            let iconConfig = UIImage.SymbolConfiguration(pointSize: size / 2, weight: .medium)
+            if let trashIcon = UIImage(systemName: "trash.fill", withConfiguration: iconConfig) {
+                let iconSize = trashIcon.size
+                let iconRect = CGRect(
+                    x: buttonRect.midX - iconSize.width / 2,
+                    y: buttonRect.midY - iconSize.height / 2,
+                    width: iconSize.width,
+                    height: iconSize.height
+                )
+                UIColor.systemRed.setFill()
+                trashIcon.draw(in: iconRect, blendMode: .normal, alpha: Coordinator.Constants.deleteIconOpacity)
+            }
+        }
     }
     
     // MARK: - Coordinator
+    
+    /// Coordinator that manages PDF viewing state, highlights, and gesture interactions.
+    /// All highlight geometry is stored in canvas coordinate space for simplicity.
     class Coordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDelegate {
+        // MARK: - Constants
+        enum Constants {
+            static let highlightOpacity: CGFloat = 0.3
+            static let selectedHighlightOpacity: CGFloat = 0.5
+            static let highlightStrokeWidth: CGFloat = 1.5
+            static let highlightTapHitSlop: CGFloat = 14
+            
+            static let handleWidth: CGFloat = 60
+            static let handleHeight: CGFloat = 8
+            static let handleHitSlop: CGFloat = 20
+            static let handleCornerRadius: CGFloat = 4
+            static let handleStrokeWidth: CGFloat = 2
+            
+            static let deleteButtonSize: CGFloat = 24
+            static let deleteButtonOffset: CGFloat = 8
+            static let deleteButtonInset: CGFloat = 10
+            static let deleteIconOpacity: CGFloat = 0.8
+            
+            static let defaultHighlightHeight: CGFloat = 30
+            static let minHighlightHeight: CGFloat = 10
+        }
+        
+        // MARK: - Properties
         let url: URL
         weak var contentView: UIView?
         weak var canvasView: PDFCanvasView?
         weak var overlayView: HighlightOverlayView?
         var document: PDFDocument?
         
-        // Explicit highlight model
+        // MARK: - Models
+        
+        /// Represents a highlight rectangle in canvas coordinate space.
+        /// Full-width highlighting with vertical-only resizing.
         struct Highlight: Identifiable {
             let id: UUID
-            var rectInCanvas: CGRect // in canvas coordinates
+            var rectInCanvas: CGRect
             var color: UIColor
         }
         
+        // MARK: - State
         var highlights: [Highlight] = []
         var selectedHighlightID: UUID?
-        var isDragging = false
-        var isResizing = false
-        var resizingEdge: ResizeEdge?
-        var dragStartPointInCanvas: CGPoint?
-        var dragStartRect: CGRect?
-        var resizeAnchorY: CGFloat? // The fixed edge Y position during resize
-        var shouldBlockScrolling = false // Set to true when gesture starts on highlight/handle
+        
+        // Gesture state
+        private var isDragging = false
+        private var isResizing = false
+        private var resizingEdge: ResizeEdge?
+        private var dragStartPointInCanvas: CGPoint?
+        private var dragStartRect: CGRect?
+        private var resizeAnchorY: CGFloat?
+        private var shouldBlockScrolling = false
         
         enum ResizeEdge {
             case top, bottom
         }
         
-        init(url: URL) { self.url = url }
+        init(url: URL) {
+            self.url = url
+        }
         
+        // MARK: - Canvas Management
         func layoutCanvas() {
             canvasView?.setNeedsLayout()
             canvasView?.layoutIfNeeded()
@@ -332,6 +393,7 @@ struct PDFKitView: UIViewRepresentable {
             overlay.setNeedsDisplay()
         }
         
+        // MARK: - Highlight Management
         func addHighlight() {
             guard let canvas = canvasView else { return }
             // Ensure canvas has computed page frames
@@ -343,24 +405,23 @@ struct PDFKitView: UIViewRepresentable {
             let visible = CGRect(origin: scroll.contentOffset, size: scroll.bounds.size)
             
             // Create full-width highlight in center of visible area
-            let highlightHeight: CGFloat = 30
-            let y = visible.midY - highlightHeight / 2
-            let rectInCanvas = CGRect(x: 0, y: y, width: canvas.bounds.width, height: highlightHeight)
+            let y = visible.midY - Constants.defaultHighlightHeight / 2
+            let rectInCanvas = CGRect(x: 0, y: y, width: canvas.bounds.width, height: Constants.defaultHighlightHeight)
             let h = Highlight(id: UUID(), rectInCanvas: rectInCanvas, color: .purple)
             highlights.append(h)
             syncOverlay()
         }
         
-        // MARK: Gestures
+        // MARK: - Gesture Handlers
+        
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let canvas = canvasView, let overlay = overlayView else { return }
             let location = gesture.location(in: canvas)
             
-            // First check if tapping delete button on selected highlight
+            // Priority 1: Check delete button tap
             if let selectedID = selectedHighlightID,
                let selectedHighlight = highlights.first(where: { $0.id == selectedID }),
                isDeleteButtonTapped(at: location, for: selectedHighlight.rectInCanvas) {
-                // Delete the highlight
                 highlights.removeAll { $0.id == selectedID }
                 selectedHighlightID = nil
                 overlay.selectedID = nil
@@ -369,10 +430,11 @@ struct PDFKitView: UIViewRepresentable {
                 return
             }
             
-            // Check if tap is on any highlight (in canvas coordinates)
+            // Priority 2: Check highlight tap (with extended hit area)
             var foundHighlight = false
             for h in highlights {
-                if h.rectInCanvas.insetBy(dx: -14, dy: -14).contains(location) {
+                let hitArea = h.rectInCanvas.insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
+                if hitArea.contains(location) {
                     selectedHighlightID = h.id
                     overlay.selectedID = selectedHighlightID
                     foundHighlight = true
@@ -380,6 +442,7 @@ struct PDFKitView: UIViewRepresentable {
                 }
             }
             
+            // Deselect if tapped outside
             if !foundHighlight {
                 selectedHighlightID = nil
                 overlay.selectedID = nil
@@ -415,7 +478,8 @@ struct PDFKitView: UIViewRepresentable {
                 // PRIORITY 2: If not on a handle, check if on highlight body
                 if !foundHandle {
                     for h in highlights {
-                        if h.rectInCanvas.insetBy(dx: -14, dy: -14).contains(location) {
+                        let hitArea = h.rectInCanvas.insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
+                        if hitArea.contains(location) {
                             selectedHighlightID = h.id
                             overlay.selectedID = selectedHighlightID
                             isDragging = true
@@ -457,7 +521,7 @@ struct PDFKitView: UIViewRepresentable {
                     newRect = CGRect(x: 0, y: minY, width: canvas.bounds.width, height: maxY - minY)
                     
                     // Ensure minimum height
-                    if newRect.height < 10 {
+                    if newRect.height < Constants.minHighlightHeight {
                         return
                     }
                 } else {
@@ -480,22 +544,30 @@ struct PDFKitView: UIViewRepresentable {
             }
         }
         
-        func detectEdgeHandle(at point: CGPoint, for rect: CGRect, handleSize: CGFloat = 30) -> ResizeEdge? {
-            let handleWidth: CGFloat = 60
-            let handleHeight: CGFloat = 8
+        // MARK: - Helper Methods
+        private func detectEdgeHandle(at point: CGPoint, for rect: CGRect) -> ResizeEdge? {
             let centerX = rect.midX
-            let hitSlop: CGFloat = 20 // Extra touch area around the handle
             
             // Top handle bounds with hitslop
-            let topHandle = CGRect(x: centerX - handleWidth/2, y: rect.minY - handleHeight/2, width: handleWidth, height: handleHeight)
-            let topHitArea = topHandle.insetBy(dx: -hitSlop, dy: -hitSlop)
+            let topHandle = CGRect(
+                x: centerX - Constants.handleWidth / 2,
+                y: rect.minY - Constants.handleHeight / 2,
+                width: Constants.handleWidth,
+                height: Constants.handleHeight
+            )
+            let topHitArea = topHandle.insetBy(dx: -Constants.handleHitSlop, dy: -Constants.handleHitSlop)
             if topHitArea.contains(point) {
                 return .top
             }
             
             // Bottom handle bounds with hitslop
-            let bottomHandle = CGRect(x: centerX - handleWidth/2, y: rect.maxY - handleHeight/2, width: handleWidth, height: handleHeight)
-            let bottomHitArea = bottomHandle.insetBy(dx: -hitSlop, dy: -hitSlop)
+            let bottomHandle = CGRect(
+                x: centerX - Constants.handleWidth / 2,
+                y: rect.maxY - Constants.handleHeight / 2,
+                width: Constants.handleWidth,
+                height: Constants.handleHeight
+            )
+            let bottomHitArea = bottomHandle.insetBy(dx: -Constants.handleHitSlop, dy: -Constants.handleHitSlop)
             if bottomHitArea.contains(point) {
                 return .bottom
             }
@@ -503,9 +575,13 @@ struct PDFKitView: UIViewRepresentable {
             return nil
         }
         
-        func isDeleteButtonTapped(at point: CGPoint, for rect: CGRect) -> Bool {
-            let deleteButtonSize: CGFloat = 32
-            let deleteButton = CGRect(x: rect.minX + 12, y: rect.minY - deleteButtonSize - 8, width: deleteButtonSize, height: deleteButtonSize)
+        private func isDeleteButtonTapped(at point: CGPoint, for rect: CGRect) -> Bool {
+            let deleteButton = CGRect(
+                x: rect.minX + Constants.deleteButtonInset,
+                y: rect.minY - Constants.deleteButtonSize - Constants.deleteButtonOffset,
+                width: Constants.deleteButtonSize,
+                height: Constants.deleteButtonSize
+            )
             return deleteButton.contains(point)
         }
         
@@ -530,8 +606,8 @@ struct PDFKitView: UIViewRepresentable {
                 
                 // Check if on any highlight or edge handle (in canvas coordinates)
                 return highlights.contains { h in
-                    detectEdgeHandle(at: loc, for: h.rectInCanvas) != nil ||
-                    h.rectInCanvas.insetBy(dx: -14, dy: -14).contains(loc)
+                    let hitArea = h.rectInCanvas.insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
+                    return detectEdgeHandle(at: loc, for: h.rectInCanvas) != nil || hitArea.contains(loc)
                 }
             }
             return true
