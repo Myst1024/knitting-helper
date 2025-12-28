@@ -255,6 +255,32 @@ struct PDFKitView: UIViewRepresentable {
                     bottomPath.lineWidth = 2
                     bottomPath.stroke()
                     ctx.restoreGState()
+                    
+                    // Draw delete button on the left side, slightly above the highlight
+                    let deleteButtonSize: CGFloat = 24
+                    let deleteButton = CGRect(x: viewRect.minX + 10, y: viewRect.minY - deleteButtonSize - 8, width: deleteButtonSize, height: deleteButtonSize)
+                    ctx.saveGState()
+                    ctx.setShadow(offset: CGSize(width: 0, height: 4), blur: 8, color: UIColor.black.withAlphaComponent(0.4).cgColor)
+                    let deletePath = UIBezierPath(ovalIn: deleteButton)
+                    UIColor.white.setFill()
+                    deletePath.fill()
+                    
+                    // Draw trash icon using SF Symbol
+                    let iconConfig = UIImage.SymbolConfiguration(pointSize: deleteButtonSize / 2, weight: .medium)
+                    if let trashIcon = UIImage(systemName: "trash.fill", withConfiguration: iconConfig) {
+                        let iconSize = trashIcon.size
+                        let iconRect = CGRect(
+                            x: deleteButton.midX - iconSize.width / 2,
+                            y: deleteButton.midY - iconSize.height / 2,
+                            width: iconSize.width,
+                            height: iconSize.height
+                        )
+                        ctx.restoreGState()
+                        ctx.saveGState()
+                        UIColor.systemRed.setFill()
+                        trashIcon.draw(in: iconRect, blendMode: .normal, alpha: 0.8)
+                    }
+                    ctx.restoreGState()
                 }
             }
             ctx.restoreGState()
@@ -329,6 +355,19 @@ struct PDFKitView: UIViewRepresentable {
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let canvas = canvasView, let overlay = overlayView else { return }
             let location = gesture.location(in: canvas)
+            
+            // First check if tapping delete button on selected highlight
+            if let selectedID = selectedHighlightID,
+               let selectedHighlight = highlights.first(where: { $0.id == selectedID }),
+               isDeleteButtonTapped(at: location, for: selectedHighlight.rectInCanvas) {
+                // Delete the highlight
+                highlights.removeAll { $0.id == selectedID }
+                selectedHighlightID = nil
+                overlay.selectedID = nil
+                overlay.highlights = highlights
+                overlay.setNeedsDisplay()
+                return
+            }
             
             // Check if tap is on any highlight (in canvas coordinates)
             var foundHighlight = false
@@ -442,15 +481,32 @@ struct PDFKitView: UIViewRepresentable {
         }
         
         func detectEdgeHandle(at point: CGPoint, for rect: CGRect, handleSize: CGFloat = 30) -> ResizeEdge? {
-            // Check if near top edge
-            if abs(point.y - rect.minY) < handleSize && point.x >= rect.minX && point.x <= rect.maxX {
+            let handleWidth: CGFloat = 60
+            let handleHeight: CGFloat = 8
+            let centerX = rect.midX
+            let hitSlop: CGFloat = 20 // Extra touch area around the handle
+            
+            // Top handle bounds with hitslop
+            let topHandle = CGRect(x: centerX - handleWidth/2, y: rect.minY - handleHeight/2, width: handleWidth, height: handleHeight)
+            let topHitArea = topHandle.insetBy(dx: -hitSlop, dy: -hitSlop)
+            if topHitArea.contains(point) {
                 return .top
             }
-            // Check if near bottom edge
-            if abs(point.y - rect.maxY) < handleSize && point.x >= rect.minX && point.x <= rect.maxX {
+            
+            // Bottom handle bounds with hitslop
+            let bottomHandle = CGRect(x: centerX - handleWidth/2, y: rect.maxY - handleHeight/2, width: handleWidth, height: handleHeight)
+            let bottomHitArea = bottomHandle.insetBy(dx: -hitSlop, dy: -hitSlop)
+            if bottomHitArea.contains(point) {
                 return .bottom
             }
+            
             return nil
+        }
+        
+        func isDeleteButtonTapped(at point: CGPoint, for rect: CGRect) -> Bool {
+            let deleteButtonSize: CGFloat = 32
+            let deleteButton = CGRect(x: rect.minX + 12, y: rect.minY - deleteButtonSize - 8, width: deleteButtonSize, height: deleteButtonSize)
+            return deleteButton.contains(point)
         }
         
         // MARK: - UIScrollViewDelegate
