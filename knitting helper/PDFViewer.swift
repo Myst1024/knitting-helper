@@ -13,9 +13,11 @@ struct PDFViewer: View {
     let url: URL
     @Binding var shouldAddHighlight: Bool
     @Binding var highlights: [CodableHighlight]
+    let counterCount: Int
+    @Binding var scrollOffsetY: Double
     
     var body: some View {
-        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, highlights: $highlights)
+        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, highlights: $highlights, counterCount: counterCount, scrollOffsetY: $scrollOffsetY)
     }
 }
 
@@ -23,6 +25,8 @@ struct PDFKitView: UIViewRepresentable {
     let url: URL
     @Binding var shouldAddHighlight: Bool
     @Binding var highlights: [CodableHighlight]
+    let counterCount: Int
+    @Binding var scrollOffsetY: Double
     
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
@@ -31,6 +35,12 @@ struct PDFKitView: UIViewRepresentable {
         scrollView.bouncesZoom = true
         scrollView.delegate = context.coordinator
         scrollView.backgroundColor = .systemBackground
+        
+        // Add top content inset for counters overlay - dynamic based on counter count
+        let counterHeight: CGFloat = 60 // Approximate height per counter
+        let topInset = (CGFloat(counterCount) * counterHeight)
+        scrollView.contentInset = UIEdgeInsets(top: topInset, left: 0, bottom: 0, right: 0)
+        scrollView.scrollIndicatorInsets = UIEdgeInsets(top: topInset, left: 0, bottom: 0, right: 0)
         
         // Load document
         let document = PDFDocument(url: url)
@@ -86,6 +96,9 @@ struct PDFKitView: UIViewRepresentable {
         pan.maximumNumberOfTouches = 1
         scrollView.addGestureRecognizer(pan)
         
+        // Store initial scroll offset to restore
+        context.coordinator.initialScrollOffsetY = scrollOffsetY
+        
         // Force initial layout to compute canvas size
         DispatchQueue.main.async {
             context.coordinator.loadHighlights(highlights)
@@ -97,6 +110,24 @@ struct PDFKitView: UIViewRepresentable {
     }
     
     func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        // Update content inset when counter count changes
+        let counterHeight: CGFloat = 60
+        let topInset = CGFloat(counterCount) * counterHeight
+        let oldInset = scrollView.contentInset.top
+        scrollView.contentInset = UIEdgeInsets(top: topInset, left: 0, bottom: 0, right: 0)
+        scrollView.scrollIndicatorInsets = UIEdgeInsets(top: topInset, left: 0, bottom: 0, right: 0)
+        
+        // Restore scroll position once after layout and inset are applied
+        if !context.coordinator.hasRestoredScrollPosition && context.coordinator.initialScrollOffsetY > 0 {
+            // Only restore after content inset has stabilized
+            if oldInset == topInset {
+                DispatchQueue.main.async {
+                    scrollView.setContentOffset(CGPoint(x: 0, y: context.coordinator.initialScrollOffsetY), animated: false)
+                    context.coordinator.hasRestoredScrollPosition = true
+                }
+            }
+        }
+        
         // Add highlight when requested
         if shouldAddHighlight {
             context.coordinator.addHighlight()
@@ -105,7 +136,7 @@ struct PDFKitView: UIViewRepresentable {
         }
     }
     
-    func makeCoordinator() -> Coordinator { Coordinator(url: url, highlights: $highlights) }
+    func makeCoordinator() -> Coordinator { Coordinator(url: url, highlights: $highlights, scrollOffsetY: $scrollOffsetY) }
     
     // MARK: - Canvas and Overlay
     
@@ -330,7 +361,7 @@ struct PDFKitView: UIViewRepresentable {
             
             static let handleWidth: CGFloat = 60
             static let handleHeight: CGFloat = 8
-            static let handleHitSlop: CGFloat = 20
+            static let handleHitSlop: CGFloat = 8
             static let handleCornerRadius: CGFloat = 4
             static let handleStrokeWidth: CGFloat = 2
             
@@ -350,6 +381,9 @@ struct PDFKitView: UIViewRepresentable {
         weak var overlayView: HighlightOverlayView?
         var document: PDFDocument?
         var highlightsBinding: Binding<[CodableHighlight]>
+        var scrollOffsetYBinding: Binding<Double>
+        var hasRestoredScrollPosition = false
+        var initialScrollOffsetY: Double = 0
         
         // MARK: - Models
         
@@ -378,9 +412,10 @@ struct PDFKitView: UIViewRepresentable {
             case top, bottom
         }
         
-        init(url: URL, highlights: Binding<[CodableHighlight]>) {
+        init(url: URL, highlights: Binding<[CodableHighlight]>, scrollOffsetY: Binding<Double>) {
             self.url = url
             self.highlightsBinding = highlights
+            self.scrollOffsetYBinding = scrollOffsetY
             super.init()
         }
         
@@ -632,7 +667,11 @@ struct PDFKitView: UIViewRepresentable {
         }
         
         func scrollViewDidZoom(_ scrollView: UIScrollView) { syncOverlay() }
-        func scrollViewDidScroll(_ scrollView: UIScrollView) { syncOverlay() }
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            syncOverlay()
+            // Save scroll position
+            scrollOffsetYBinding.wrappedValue = Double(scrollView.contentOffset.y)
+        }
         
         // MARK: - UIGestureRecognizerDelegate
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {

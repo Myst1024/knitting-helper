@@ -7,6 +7,15 @@
 
 import Foundation
 
+// MARK: - Constants
+
+private enum FileConstants {
+    static let projectsDirectory = "Projects"
+    static let projectsFileName = "projects.json"
+}
+
+// MARK: - Models
+
 /// Codable version of a highlight for persistence
 struct CodableHighlight: Identifiable, Codable {
     let id: UUID
@@ -27,13 +36,15 @@ struct Project: Identifiable, Codable {
     var pdfURL: URL
     var counters: [Counter] = []
     var highlights: [CodableHighlight] = []
+    var scrollOffsetY: Double = 0
     
-    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = []) {
+    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], scrollOffsetY: Double = 0) {
         self.id = id
         self.name = name
         self.pdfURL = pdfURL
         self.counters = counters
         self.highlights = highlights
+        self.scrollOffsetY = scrollOffsetY
     }
 }
 
@@ -66,17 +77,23 @@ extension Counter: Codable {
 // MARK: - File Management
 
 extension Project {
+    private static var documentsDirectory: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    }
+    
+    private static var projectsDirectory: URL? {
+        documentsDirectory?.appendingPathComponent(FileConstants.projectsDirectory, isDirectory: true)
+    }
+    
     /// Copies a PDF file to the app's documents directory and returns the new URL
     static func copyPDFToDocuments(from sourceURL: URL, withName fileName: String) throws -> URL {
         let fileManager = FileManager.default
         
-        // Get documents directory
-        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+        guard let projectsURL = projectsDirectory else {
             throw NSError(domain: "ProjectError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not access documents directory"])
         }
         
-        // Create projects subdirectory if it doesn't exist
-        let projectsURL = documentsURL.appendingPathComponent("Projects", isDirectory: true)
+        // Create projects subdirectory if needed
         if !fileManager.fileExists(atPath: projectsURL.path) {
             try fileManager.createDirectory(at: projectsURL, withIntermediateDirectories: true)
         }
@@ -85,15 +102,14 @@ extension Project {
         let uniqueFileName = "\(UUID().uuidString)_\(fileName)"
         let destinationURL = projectsURL.appendingPathComponent(uniqueFileName)
         
-        // Start accessing security-scoped resource
-        let didStartAccessing = sourceURL.startAccessingSecurityScopedResource()
+        // Access and copy the file
         defer {
-            if didStartAccessing {
+            if sourceURL.startAccessingSecurityScopedResource() {
                 sourceURL.stopAccessingSecurityScopedResource()
             }
         }
         
-        // Copy the file
+        _ = sourceURL.startAccessingSecurityScopedResource()
         try fileManager.copyItem(at: sourceURL, to: destinationURL)
         
         return destinationURL
@@ -110,8 +126,7 @@ extension Project {
 
 extension Project {
     private static var projectsFileURL: URL? {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("projects.json")
+        documentsDirectory?.appendingPathComponent(FileConstants.projectsFileName)
     }
     
     /// Saves an array of projects to disk
@@ -135,15 +150,14 @@ extension Project {
         
         do {
             let data = try Data(contentsOf: fileURL)
-            let projects = try JSONDecoder().decode([Project].self, from: data)
-            return projects
+            return try JSONDecoder().decode([Project].self, from: data)
         } catch {
             print("Failed to load projects: \(error)")
             return []
         }
     }
     
-    /// Deletes a project and its PDF file
+    /// Deletes this project and its PDF file
     func delete() {
         deletePDF()
         var projects = Project.loadProjects()

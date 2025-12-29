@@ -7,6 +7,24 @@
 
 import SwiftUI
 
+// MARK: - Constants
+
+private enum Constants {
+    static let cornerRadius: CGFloat = 8
+    static let maxFieldWidth: CGFloat = 50
+    static let counterPadding: CGFloat = 8
+    static let shadowRadius: CGFloat = 2
+    static let shadowOpacity: CGFloat = 0.08
+    static let defaultMaxValue: Int = 10
+}
+
+enum CounterPosition {
+    case single
+    case first
+    case middle
+    case last
+}
+
 // MARK: - Counter Model
 
 /// Represents a stitch or row counter with a name and numeric value
@@ -32,6 +50,7 @@ struct Counter: Identifiable {
 struct CounterView: View {
     @Binding var counter: Counter
     let onDelete: () -> Void
+    var position: CounterPosition = .single
     
     @State private var isEditingName = false
     @State private var isEditingMax = false
@@ -46,7 +65,7 @@ struct CounterView: View {
     }
     
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 0) {
             // Top row: name, max, and delete button
             HStack {
                 if isEditingName {
@@ -70,54 +89,11 @@ struct CounterView: View {
                 
                 Spacer()
                 
-                // Max value (tappable to edit)
-                if isEditingMax {
-                    HStack(spacing: 4) {
-                        Text("max:")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        TextField("Max", value: $counter.max, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 50)
-                            .font(.caption)
-                            .keyboardType(.numberPad)
-                            .focused($isMaxFieldFocused)
-                            .onSubmit {
-                                isEditingMax = false
-                            }
-                        Button("Done") {
-                            counter.max = counter.max ?? 10
-                            isEditingMax = false
-                            isMaxFieldFocused = false
-                        }
-                        .font(.caption2)
-                        .foregroundColor(.purple)
-                    }
-                } else {
-                    if let max = counter.max {
-                        Text("max: \(max)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.purple.opacity(0.1))
-                            .cornerRadius(6)
-                            .onTapGesture {
-                                isEditingMax = true
-                                isMaxFieldFocused = true
-                            }
-                    } else {
-                        Button {
-                            counter.max = 10
-                            isEditingMax = true
-                            isMaxFieldFocused = true
-                        } label: {
-                            Text("+ max")
-                                .font(.caption2)
-                                .foregroundColor(.purple)
-                        }
-                    }
-                }
+                MaxValueEditor(
+                    max: $counter.max,
+                    isEditing: $isEditingMax,
+                    isFocused: $isMaxFieldFocused
+                )
                 
                 Button(action: onDelete) {
                     Image(systemName: "xmark.circle.fill")
@@ -128,7 +104,7 @@ struct CounterView: View {
             }
             
             // Middle row: value and reps (if applicable)
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 // Decrement button
                 Button(action: {
                     if counter.value > 0 {
@@ -136,20 +112,28 @@ struct CounterView: View {
                     }
                 }) {
                     Image(systemName: "minus.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(counter.value > 0 ? .purple : .gray.opacity(0.3))
+                        .font(.title3)
+                        .foregroundStyle(
+                            counter.value > 0 ?
+                            LinearGradient(
+                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ) :
+                            LinearGradient(
+                                colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(counter.value == 0)
+                .alignmentGuide(VerticalAlignment.center) { d in d[VerticalAlignment.center] }
                 
-                VStack(spacing: 0) {
-                    Text("Count")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text("\(counter.value)")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(isAtMax ? .purple : .primary)
-                }
+                Text("\(counter.value)")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundColor(isAtMax ? .cyan : .primary)
                 
                 // Repeat button (when at max) or Increment button
                 if isAtMax {
@@ -157,19 +141,24 @@ struct CounterView: View {
                         counter.value = 0
                         counter.reps += 1
                     }) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Image(systemName: "arrow.counterclockwise.circle.fill")
                             Text("Repeat")
                                 .fontWeight(.semibold)
                         }
-                        .font(.callout)
+                        .font(.caption)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                         .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.purple)
+                            LinearGradient(
+                                colors: [Color.cyan, Color.cyan.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -177,22 +166,29 @@ struct CounterView: View {
                         counter.value += 1
                     }) {
                         Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.purple)
+                            .font(.title3)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
                     }
                     .buttonStyle(.plain)
+                    .alignmentGuide(VerticalAlignment.center) { d in d[VerticalAlignment.center] }
                 }
                 
                 if counter.max != nil {
                     Divider()
-                        .frame(height: 30)
+                        .frame(height: 24)
                     
                     VStack(spacing: 0) {
                         Text("Reps")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                         Text("\(counter.reps)")
-                            .font(.system(size: 20, weight: .semibold, design: .rounded))
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -210,11 +206,15 @@ struct CounterView: View {
                 .disabled(counter.value == 0)
             }
         }
-        .padding(10)
+        .padding(Constants.counterPadding)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedCornerShape(radius: Constants.cornerRadius, corners: cornersToRound())
                 .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+                .shadow(color: position == .single ? .black.opacity(0.06) : .clear, radius: 8, x: 0, y: 2)
+        )
+        .overlay(
+            RoundedCornerShape(radius: Constants.cornerRadius, corners: cornersToRound())
+                .stroke(Color(.systemGray5), lineWidth: 0.5)
         )
         .onChange(of: isMaxFieldFocused) { _, isFocused in
             if !isFocused && isEditingMax {
@@ -227,6 +227,93 @@ struct CounterView: View {
             }
         }
     }
+    
+    private func cornersToRound() -> UIRectCorner {
+        switch position {
+        case .single:
+            return .allCorners
+        case .first:
+            return [.topLeft, .topRight]
+        case .middle:
+            return []
+        case .last:
+            return [.bottomLeft, .bottomRight]
+        }
+    }
+}
+
+// MARK: - Max Value Editor
+
+struct MaxValueEditor: View {
+    @Binding var max: Int?
+    @Binding var isEditing: Bool
+    @FocusState.Binding var isFocused: Bool
+    
+    var body: some View {
+        if isEditing {
+            HStack(spacing: 0) {
+                Text("max:")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                TextField("Max", value: $max, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: Constants.maxFieldWidth)
+                    .font(.caption)
+                    .keyboardType(.numberPad)
+                    .focused($isFocused)
+                    .onSubmit {
+                        isEditing = false
+                    }
+                Button("Done") {
+                    max = max ?? Constants.defaultMaxValue
+                    isEditing = false
+                    isFocused = false
+                }
+                .font(.caption2)
+                .foregroundColor(.cyan)
+            }
+        } else {
+            if let maxValue = max {
+                Text("max: \(maxValue)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.cyan.opacity(0.1))
+                    .cornerRadius(6)
+                    .onTapGesture {
+                        isEditing = true
+                        isFocused = true
+                    }
+            } else {
+                Button {
+                    max = Constants.defaultMaxValue
+                    isEditing = true
+                    isFocused = true
+                } label: {
+                    Text("+ max")
+                        .font(.caption2)
+                        .foregroundColor(.cyan)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Custom Shape for Selective Corner Rounding
+
+struct RoundedCornerShape: Shape {
+    var radius: CGFloat
+    var corners: UIRectCorner
+    
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: radius, height: radius)
+        )
+        return Path(path.cgPath)
+    }
 }
 
 // MARK: - Counters Overlay
@@ -237,43 +324,74 @@ struct CountersOverlay: View {
     let onAddCounter: () -> Void
     
     var body: some View {
-        if !counters.isEmpty || true { // Always show to allow adding counters
-            VStack(spacing: 8) {
-                // Header with add button
-                HStack {
-                    Text("Counters")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    Button(action: onAddCounter) {
-                        Label("Add", systemImage: "plus.circle.fill")
-                            .font(.caption)
-                            .foregroundColor(.purple)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                
-                // Counter list (full width)
-                if !counters.isEmpty {
-                    ForEach($counters) { $counter in
-                        CounterView(counter: $counter) {
-                            if let index = counters.firstIndex(where: { $0.id == counter.id }) {
+        VStack(spacing: 0) {
+            // Counter list
+            if !counters.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(counters.enumerated()), id: \.element.id) { index, _ in
+                        CounterView(
+                            counter: $counters[index],
+                            onDelete: {
                                 counters.remove(at: index)
-                            }
-                        }
+                            },
+                            position: counterPosition(for: index, total: counters.count)
+                        )
                         .padding(.horizontal, 12)
                     }
-                    .padding(.bottom, 8)
                 }
             }
-            .background(Color(.systemBackground))
-            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+            
+            // Floating add button
+            HStack {
+                Spacer()
+                
+                Button(action: onAddCounter) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .background(
+                            Circle()
+                                .fill(Color(.systemBackground))
+                                .frame(width: 36, height: 36)
+                        )
+                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 16)
+            }
+            .padding(.top, counters.isEmpty ? 12 : 8)
+            .padding(.bottom, 8)
+        }
+        .background(
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [Color(.systemBackground), Color(.systemBackground).opacity(0)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 40)
+                
+                Color.clear
+            }
+        )
+        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
+    }
+    
+    private func counterPosition(for index: Int, total: Int) -> CounterPosition {
+        if total == 1 {
+            return .single
+        } else if index == 0 {
+            return .first
+        } else if index == total - 1 {
+            return .last
+        } else {
+            return .middle
         }
     }
 }

@@ -7,6 +7,17 @@
 
 import SwiftUI
 
+// MARK: - Constants
+
+private enum Constants {
+    static let cornerRadius: CGFloat = 12
+    static let cardPadding: CGFloat = 12
+    static let iconSize: CGFloat = 60
+    static let toolbarButtonSize: CGFloat = 44
+}
+
+// MARK: - ContentView
+
 struct ContentView: View {
     @State private var projects: [Project] = []
     @State private var currentProject: Project?
@@ -22,7 +33,7 @@ struct ContentView: View {
         NavigationView {
             VStack(spacing: 0) {
                 if let project = currentProject {
-                    ZStack(alignment: .top) {
+                    ZStack {
                         // PDF Viewer
                         PDFViewer(
                             url: project.pdfURL,
@@ -30,58 +41,94 @@ struct ContentView: View {
                             highlights: Binding(
                                 get: { currentProject?.highlights ?? [] },
                                 set: { currentProject?.highlights = $0 }
+                            ),
+                            counterCount: project.counters.count,
+                            scrollOffsetY: Binding(
+                                get: { currentProject?.scrollOffsetY ?? 0 },
+                                set: { currentProject?.scrollOffsetY = $0 }
                             )
                         )
                         
-                        // Counters overlay (fixed at top)
-                        CountersOverlay(
-                            counters: Binding(
-                                get: { currentProject?.counters ?? [] },
-                                set: { currentProject?.counters = $0 }
-                            ),
-                            onAddCounter: {
-                                currentProject?.counters.append(Counter(name: "Counter \(project.counters.count + 1)"))
+                        VStack {
+                            // Counters overlay (fixed at top)
+                            CountersOverlay(
+                                counters: Binding(
+                                    get: { currentProject?.counters ?? [] },
+                                    set: { currentProject?.counters = $0 }
+                                ),
+                                onAddCounter: {
+                                    var transaction = Transaction()
+                                    transaction.disablesAnimations = true
+                                    withTransaction(transaction) {
+                                        currentProject?.counters.append(Counter(name: "Counter \(project.counters.count + 1)"))
+                                    }
+                                }
+                            )
+                            
+                            Spacer()
+                            
+                            // Highlight button (bottom left)
+                            HStack {
+                                Button {
+                                    shouldAddHighlight = true
+                                } label: {
+                                    Image(systemName: "highlighter")
+                                        .font(.title2)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .background(
+                                            Circle()
+                                                .fill(Color(.systemBackground))
+                                                .frame(width: 36, height: 36)
+                                        )
+                                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.leading, 16)
+                                .padding(.bottom, 16)
+                                
+                                Spacer()
                             }
-                        )
+                        }
                         .zIndex(1)
                     }
-                    .simultaneousGesture(
-                        TapGesture().onEnded {
-                            // Dismiss keyboard when tapping anywhere
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        }
-                    )
-                    
-                    // Fixed toolbar at the bottom
-                    HStack(spacing: 16) {
-                        Button {
-                            shouldAddHighlight = true
-                        } label: {
-                            Image(systemName: "highlighter")
-                                .font(.title2)
-                                .foregroundStyle(.primary)
-                                .frame(width: 44, height: 44)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemBackground))
-                    .shadow(color: .black.opacity(0.1), radius: 2, y: -2)
+                    .dismissKeyboardOnTap()
                 } else {
                     // Empty state - show projects list or welcome screen
                     ScrollView {
                         VStack(spacing: 24) {
-                            Image(systemName: "folder.badge.plus")
-                                .font(.system(size: 60))
-                                .foregroundStyle(.purple)
-                                .padding(.top, 40)
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 100, height: 100)
+                                
+                                Image(systemName: "folder.badge.plus")
+                                    .font(.system(size: Constants.iconSize))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
+                            .padding(.top, 40)
                             
                             VStack(spacing: 8) {
                                 Text(projects.isEmpty ? "Welcome to Knitting Helper" : "Your Projects")
                                     .font(.title2)
-                                    .fontWeight(.semibold)
+                                    .fontWeight(.bold)
                                 
                                 if projects.isEmpty {
                                     Text("Create a project to get started")
@@ -94,62 +141,18 @@ struct ContentView: View {
                             if !projects.isEmpty {
                                 VStack(spacing: 12) {
                                     ForEach(projects) { project in
-                                        HStack(spacing: 0) {
-                                            Button {
-                                                openProject(project)
-                                            } label: {
-                                                HStack {
-                                                    Image(systemName: "folder.fill")
-                                                        .font(.title2)
-                                                        .foregroundColor(.purple)
-                                                    
-                                                    VStack(alignment: .leading, spacing: 4) {
-                                                        Text(project.name)
-                                                            .font(.headline)
-                                                            .foregroundColor(.primary)
-                                                        
-                                                        Text("\(project.counters.count) counters")
-                                                            .font(.caption)
-                                                            .foregroundColor(.secondary)
-                                                    }
-                                                    
-                                                    Spacer()
-                                                    
-                                                    Image(systemName: "chevron.right")
-                                                        .font(.caption)
-                                                        .foregroundColor(.secondary)
-                                                }
-                                                .padding()
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .contentShape(Rectangle())
+                                        ProjectCard(
+                                            project: project,
+                                            onOpen: { openProject(project) },
+                                            onRename: {
+                                                projectToRename = project
+                                                newProjectName = project.name
+                                                showRenameDialog = true
+                                            },
+                                            onDelete: {
+                                                projectToDelete = project
+                                                showDeleteConfirmation = true
                                             }
-                                            .buttonStyle(.plain)
-                                            
-                                            Menu {
-                                                Button {
-                                                    projectToRename = project
-                                                    newProjectName = project.name
-                                                    showRenameDialog = true
-                                                } label: {
-                                                    Label("Rename Project", systemImage: "pencil")
-                                                }
-                                                
-                                                Button(role: .destructive) {
-                                                    projectToDelete = project
-                                                    showDeleteConfirmation = true
-                                                } label: {
-                                                    Label("Delete Project", systemImage: "trash")
-                                                }
-                                            } label: {
-                                                Image(systemName: "ellipsis.circle")
-                                                    .font(.title3)
-                                                    .foregroundColor(.secondary)
-                                                    .padding(.trailing, 16)
-                                            }
-                                        }
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(Color(.systemGray6))
                                         )
                                     }
                                 }
@@ -162,13 +165,19 @@ struct ContentView: View {
                             } label: {
                                 Label("Create New Project", systemImage: "plus.circle.fill")
                                     .font(.headline)
+                                    .fontWeight(.semibold)
                                     .foregroundColor(.white)
-                                    .padding(.horizontal, 24)
-                                    .padding(.vertical, 14)
+                                    .padding(.horizontal, 28)
+                                    .padding(.vertical, 16)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(Color.purple)
+                                        LinearGradient(
+                                            colors: [Color.cyan, Color.cyan.opacity(0.8)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
                                     )
+                                    .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
+                                    .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                             }
                             .buttonStyle(.plain)
                             .padding(.bottom, 40)
@@ -274,13 +283,109 @@ struct ContentView: View {
             projects[index].name = trimmedName
             Project.saveProjects(projects)
             
-            // Update current project if it's the one being renamed
             if currentProject?.id == project.id {
                 currentProject?.name = trimmedName
             }
         }
     }
 }
+
+// MARK: - Supporting Views
+
+struct ProjectCard: View {
+    let project: Project
+    let onOpen: () -> Void
+    let onRename: () -> Void
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: onOpen) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 50, height: 50)
+                        
+                        Image(systemName: "folder.fill")
+                            .font(.title3)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(project.name)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Text("\(project.counters.count) counters")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            Menu {
+                Button(action: onRename) {
+                    Label("Rename Project", systemImage: "pencil")
+                }
+                
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete Project", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle.fill")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+                    .padding(.trailing, 16)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: Constants.cornerRadius)
+                .fill(Color(.systemBackground))
+                .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Constants.cornerRadius)
+                .stroke(Color(.systemGray5), lineWidth: 0.5)
+        )
+    }
+}
+
+// MARK: - View Extensions
+
+extension View {
+    func dismissKeyboardOnTap() -> some View {
+        simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        )
+    }
+}
+
+// MARK: - Preview
 
 #Preview {
     ContentView()

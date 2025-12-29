@@ -7,6 +7,17 @@
 
 import SwiftUI
 
+// MARK: - Constants
+
+private enum Constants {
+    static let iconSize: CGFloat = 60
+    static let cornerRadius: CGFloat = 12
+    static let cornerRadius8: CGFloat = 8
+    static let buttonHeight: CGFloat = 50
+}
+
+// MARK: - NewProjectView
+
 struct NewProjectView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var project: Project?
@@ -21,14 +32,32 @@ struct NewProjectView: View {
         NavigationView {
             VStack(spacing: 24) {
                 // Icon
-                Image(systemName: "folder.badge.plus")
-                    .font(.system(size: 60))
-                    .foregroundStyle(.purple)
-                    .padding(.top, 40)
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+                    
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: Constants.iconSize))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .padding(.top, 40)
                 
                 Text("Create New Project")
                     .font(.title2)
-                    .fontWeight(.semibold)
+                    .fontWeight(.bold)
                 
                 VStack(spacing: 16) {
                     // Project name field
@@ -52,14 +81,35 @@ struct NewProjectView: View {
                         Button {
                             showDocumentPicker = true
                         } label: {
-                            HStack {
-                                Image(systemName: selectedPDFURL == nil ? "doc.badge.plus" : "doc.fill")
-                                    .font(.title3)
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    Circle()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 44, height: 44)
+                                    
+                                    Image(systemName: selectedPDFURL == nil ? "doc.badge.plus" : "doc.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                }
                                 
                                 VStack(alignment: .leading, spacing: 2) {
                                     if let url = selectedPDFURL {
                                         Text(url.lastPathComponent)
                                             .font(.body)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary)
                                             .lineLimit(1)
                                         Text("Tap to change")
                                             .font(.caption)
@@ -67,6 +117,8 @@ struct NewProjectView: View {
                                     } else {
                                         Text("Select PDF Pattern")
                                             .font(.body)
+                                            .fontWeight(.medium)
+                                            .foregroundColor(.primary)
                                     }
                                 }
                                 
@@ -78,8 +130,13 @@ struct NewProjectView: View {
                             }
                             .padding()
                             .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color(.systemGray6))
+                                RoundedRectangle(cornerRadius: Constants.cornerRadius8)
+                                    .fill(Color(.systemBackground))
+                                    .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Constants.cornerRadius8)
+                                    .stroke(Color(.systemGray5), lineWidth: 0.5)
                             )
                         }
                         .buttonStyle(.plain)
@@ -121,13 +178,28 @@ struct NewProjectView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
+                .frame(height: Constants.buttonHeight)
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(canCreate ? Color.purple : Color.gray.opacity(0.3))
+                    Group {
+                        if isFormValid {
+                            LinearGradient(
+                                colors: [Color.cyan, Color.cyan.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        } else {
+                            LinearGradient(
+                                colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        }
+                    }
                 )
+                .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
+                .shadow(color: isFormValid ? Color.black.opacity(0.2) : Color.clear, radius: 8, y: 4)
                 .foregroundColor(.white)
-                .disabled(!canCreate || isCreating)
+                .disabled(!isFormValid || isCreating)
                 .padding(.horizontal)
                 .padding(.bottom, 20)
             }
@@ -145,7 +217,7 @@ struct NewProjectView: View {
         }
     }
     
-    private var canCreate: Bool {
+    private var isFormValid: Bool {
         !projectName.trimmingCharacters(in: .whitespaces).isEmpty && selectedPDFURL != nil
     }
     
@@ -155,27 +227,37 @@ struct NewProjectView: View {
         isCreating = true
         errorMessage = nil
         
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task {
             do {
-                // Copy PDF to documents directory
-                let fileName = sourceURL.lastPathComponent
-                let copiedURL = try Project.copyPDFToDocuments(from: sourceURL, withName: fileName)
-                
-                // Create project
+                let copiedURL = try await copyPDF(from: sourceURL)
                 let newProject = Project(
                     name: projectName.trimmingCharacters(in: .whitespaces),
                     pdfURL: copiedURL
                 )
                 
-                DispatchQueue.main.async {
+                await MainActor.run {
                     project = newProject
                     isCreating = false
                     dismiss()
                 }
             } catch {
-                DispatchQueue.main.async {
+                await MainActor.run {
                     isCreating = false
                     errorMessage = "Failed to create project: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func copyPDF(from sourceURL: URL) async throws -> URL {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let fileName = sourceURL.lastPathComponent
+                    let copiedURL = try Project.copyPDFToDocuments(from: sourceURL, withName: fileName)
+                    continuation.resume(returning: copiedURL)
+                } catch {
+                    continuation.resume(throwing: error)
                 }
             }
         }
