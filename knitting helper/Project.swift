@@ -46,6 +46,11 @@ struct Project: Identifiable, Codable {
         self.highlights = highlights
         self.scrollOffsetY = scrollOffsetY
     }
+    
+    /// Checks if the project's PDF file still exists
+    var isValid: Bool {
+        FileManager.default.fileExists(atPath: pdfURL.path)
+    }
 }
 
 // MARK: - Counter Codable Conformance
@@ -141,7 +146,7 @@ extension Project {
         }
     }
     
-    /// Loads all projects from disk
+    /// Loads all projects from disk and validates them
     static func loadProjects() -> [Project] {
         guard let fileURL = projectsFileURL,
               FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -150,7 +155,18 @@ extension Project {
         
         do {
             let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder().decode([Project].self, from: data)
+            let projects = try JSONDecoder().decode([Project].self, from: data)
+            
+            // Filter out invalid projects (missing PDF files)
+            let validProjects = projects.filter { $0.isValid }
+            
+            // If any projects were invalid, save the cleaned list
+            if validProjects.count != projects.count {
+                print("Removed \(projects.count - validProjects.count) invalid project(s) with missing PDF files")
+                saveProjects(validProjects)
+            }
+            
+            return validProjects
         } catch {
             print("Failed to load projects: \(error)")
             return []

@@ -100,70 +100,80 @@ struct ContentView: View {
                     .dismissKeyboardOnTap()
                 } else {
                     // Empty state - show projects list or welcome screen
-                    ScrollView {
-                        VStack(spacing: 24) {
-                            ZStack {
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
+                    ZStack {
+                        ScrollView {
+                            VStack(spacing: 24) {
+                                ZStack {
+                                    Circle()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
                                         )
-                                    )
-                                    .frame(width: 100, height: 100)
-                                
-                                Image(systemName: "folder.badge.plus")
-                                    .font(.system(size: Constants.iconSize))
-                                    .foregroundStyle(
-                                        LinearGradient(
-                                            colors: [Color.cyan, Color.cyan.opacity(0.7)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
+                                        .frame(width: 100, height: 100)
+                                    
+                                    Image(systemName: "folder.badge.plus")
+                                        .font(.system(size: Constants.iconSize))
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
                                         )
-                                    )
-                            }
-                            .padding(.top, 40)
-                            
-                            VStack(spacing: 8) {
-                                Text(projects.isEmpty ? "Welcome to Knitting Helper" : "Your Projects")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                
-                                if projects.isEmpty {
-                                    Text("Create a project to get started")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
                                 }
-                            }
-                            
-                            // Show existing projects
-                            if !projects.isEmpty {
-                                VStack(spacing: 12) {
-                                    ForEach(projects) { project in
-                                        ProjectCard(
-                                            project: project,
-                                            onOpen: { openProject(project) },
-                                            onRename: {
-                                                projectToRename = project
-                                                newProjectName = project.name
-                                                showRenameDialog = true
-                                            },
-                                            onDelete: {
-                                                projectToDelete = project
-                                                showDeleteConfirmation = true
-                                            }
-                                        )
+                                .padding(.top, 40)
+                                
+                                VStack(spacing: 8) {
+                                    Text(projects.isEmpty ? "Welcome to Knitting Helper" : "Your Projects")
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                    
+                                    if projects.isEmpty {
+                                        Text("Create a project to get started")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
                                     }
                                 }
-                                .padding(.horizontal)
+                                
+                                // Show existing projects
+                                if !projects.isEmpty {
+                                    VStack(spacing: 12) {
+                                        ForEach(projects) { project in
+                                            ProjectCard(
+                                                project: project,
+                                                onOpen: { openProject(project) },
+                                                onRename: {
+                                                    projectToRename = project
+                                                    newProjectName = project.name
+                                                    showRenameDialog = true
+                                                },
+                                                onDelete: {
+                                                    projectToDelete = project
+                                                    showDeleteConfirmation = true
+                                                }
+                                            )
+                                        }
+                                    }
+                                    .padding(.horizontal)
+                                }
+                                
+                                // Add spacing for the floating button at the bottom
+                                Color.clear
+                                    .frame(height: 100)
                             }
+                        }
+                        
+                        // Floating Start New Project button
+                        VStack {
+                            Spacer()
                             
-                            // Create new project button
                             Button {
                                 showNewProjectView = true
                             } label: {
-                                Label("Create New Project", systemImage: "plus.circle.fill")
+                                Label("Start New Project", systemImage: "plus.circle.fill")
                                     .font(.headline)
                                     .fontWeight(.semibold)
                                     .foregroundColor(.white)
@@ -177,10 +187,10 @@ struct ContentView: View {
                                         )
                                     )
                                     .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
-                                    .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+                                    .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
                             }
                             .buttonStyle(.plain)
-                            .padding(.bottom, 40)
+                            .padding(.bottom, 20)
                         }
                     }
                 }

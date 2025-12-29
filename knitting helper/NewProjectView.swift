@@ -168,19 +168,7 @@ struct NewProjectView: View {
                 Button {
                     createProject()
                 } label: {
-                    if isCreating {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .tint(.white)
-                    } else {
-                        Text("Create Project")
-                            .fontWeight(.semibold)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: Constants.buttonHeight)
-                .background(
-                    Group {
+                    ZStack {
                         if isFormValid {
                             LinearGradient(
                                 colors: [Color.cyan, Color.cyan.opacity(0.8)],
@@ -194,11 +182,23 @@ struct NewProjectView: View {
                                 endPoint: .bottomTrailing
                             )
                         }
+                        
+                        if isCreating {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(.white)
+                        } else {
+                            Text("Create Project")
+                                .fontWeight(.semibold)
+                                .foregroundColor(.white)
+                        }
                     }
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Constants.buttonHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
+                }
+                .buttonStyle(.plain)
                 .shadow(color: isFormValid ? Color.black.opacity(0.2) : Color.clear, radius: 8, y: 4)
-                .foregroundColor(.white)
                 .disabled(!isFormValid || isCreating)
                 .padding(.horizontal)
                 .padding(.bottom, 20)
