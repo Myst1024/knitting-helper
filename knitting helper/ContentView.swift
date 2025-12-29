@@ -48,6 +48,7 @@ struct ContentView: View {
                                 set: { currentProject?.scrollOffsetY = $0 }
                             )
                         )
+                        .edgesIgnoringSafeArea(.bottom)
                         
                         VStack {
                             // Counters overlay (fixed at top)
@@ -90,14 +91,18 @@ struct ContentView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .padding(.leading, 16)
-                                .padding(.bottom, 16)
-                                
                                 Spacer()
                             }
+                                .padding(.bottom, safeAreaBottomInset() + 16)
                         }
                         .zIndex(1)
                     }
+                    .ignoresSafeArea(.container, edges: .bottom)
                     .dismissKeyboardOnTap()
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing),
+                        removal: .move(edge: .trailing)
+                    ))
                 } else {
                     // Empty state - show projects list or welcome screen
                     ZStack {
@@ -193,8 +198,13 @@ struct ContentView: View {
                             .padding(.bottom, 20)
                         }
                     }
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .leading),
+                        removal: .move(edge: .leading)
+                    ))
                 }
             }
+            .animation(.easeInOut(duration: 0.3), value: currentProject?.id)
             .navigationTitle(currentProject?.name ?? "Knitting Helper")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -263,7 +273,9 @@ struct ContentView: View {
     }
     
     private func openProject(_ project: Project) {
-        currentProject = project
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentProject = project
+        }
     }
     
     private func closeProject() {
@@ -274,7 +286,9 @@ struct ContentView: View {
                 Project.saveProjects(projects)
             }
         }
-        currentProject = nil
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentProject = nil
+        }
     }
     
     private func deleteProject(_ project: Project) {
@@ -299,6 +313,13 @@ struct ContentView: View {
         }
     }
 }
+        // Helper to get the bottom safe area inset
+        private func safeAreaBottomInset() -> CGFloat {
+            guard let window = UIApplication.shared.connectedScenes
+                .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
+                .first else { return 0 }
+            return window.safeAreaInsets.bottom
+        }
 
 // MARK: - Supporting Views
 
