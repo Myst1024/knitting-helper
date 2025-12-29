@@ -258,6 +258,7 @@ struct ContentView: View {
                 loadProjects()
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
     
     // MARK: - Project Management
