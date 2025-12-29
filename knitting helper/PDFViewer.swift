@@ -12,15 +12,17 @@ import PDFKit
 struct PDFViewer: View {
     let url: URL
     @Binding var shouldAddHighlight: Bool
+    @Binding var highlights: [CodableHighlight]
     
     var body: some View {
-        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight)
+        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, highlights: $highlights)
     }
 }
 
 struct PDFKitView: UIViewRepresentable {
     let url: URL
     @Binding var shouldAddHighlight: Bool
+    @Binding var highlights: [CodableHighlight]
     
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
@@ -86,6 +88,7 @@ struct PDFKitView: UIViewRepresentable {
         
         // Force initial layout to compute canvas size
         DispatchQueue.main.async {
+            context.coordinator.loadHighlights(highlights)
             context.coordinator.layoutCanvas()
             context.coordinator.syncOverlay()
         }
@@ -102,7 +105,7 @@ struct PDFKitView: UIViewRepresentable {
         }
     }
     
-    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+    func makeCoordinator() -> Coordinator { Coordinator(url: url, highlights: $highlights) }
     
     // MARK: - Canvas and Overlay
     
@@ -346,6 +349,7 @@ struct PDFKitView: UIViewRepresentable {
         weak var canvasView: PDFCanvasView?
         weak var overlayView: HighlightOverlayView?
         var document: PDFDocument?
+        var highlightsBinding: Binding<[CodableHighlight]>
         
         // MARK: - Models
         
@@ -374,8 +378,10 @@ struct PDFKitView: UIViewRepresentable {
             case top, bottom
         }
         
-        init(url: URL) {
+        init(url: URL, highlights: Binding<[CodableHighlight]>) {
             self.url = url
+            self.highlightsBinding = highlights
+            super.init()
         }
         
         // MARK: - Canvas Management
@@ -391,6 +397,36 @@ struct PDFKitView: UIViewRepresentable {
             overlay.highlights = highlights
             overlay.selectedID = selectedHighlightID
             overlay.setNeedsDisplay()
+        }
+        
+        // MARK: - Highlight Persistence
+        
+        func loadHighlights(_ codableHighlights: [CodableHighlight]) {
+            highlights = codableHighlights.map { codable in
+                Highlight(
+                    id: codable.id,
+                    rectInCanvas: codable.rectInCanvas,
+                    color: UIColor(hex: codable.colorHex) ?? .purple
+                )
+            }
+            syncOverlay()
+        }
+        
+        func getHighlights() -> [CodableHighlight] {
+            return highlights.map { highlight in
+                CodableHighlight(
+                    id: highlight.id,
+                    rectInCanvas: highlight.rectInCanvas,
+                    colorHex: highlight.color.toHex()
+                )
+            }
+        }
+        
+        private func syncHighlightsToBinding() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.highlightsBinding.wrappedValue = self.getHighlights()
+            }
         }
         
         // MARK: - Highlight Management
@@ -410,6 +446,7 @@ struct PDFKitView: UIViewRepresentable {
             let h = Highlight(id: UUID(), rectInCanvas: rectInCanvas, color: .purple)
             highlights.append(h)
             syncOverlay()
+            syncHighlightsToBinding()
         }
         
         // MARK: - Gesture Handlers
@@ -427,6 +464,7 @@ struct PDFKitView: UIViewRepresentable {
                 overlay.selectedID = nil
                 overlay.highlights = highlights
                 overlay.setNeedsDisplay()
+                syncHighlightsToBinding()
                 return
             }
             
@@ -532,6 +570,9 @@ struct PDFKitView: UIViewRepresentable {
                 overlay.highlights = highlights
                 overlay.setNeedsDisplay()
             case .ended, .cancelled, .failed:
+                // Save highlights after drag/resize completes
+                syncHighlightsToBinding()
+                
                 isDragging = false
                 isResizing = false
                 resizingEdge = nil
@@ -612,6 +653,38 @@ struct PDFKitView: UIViewRepresentable {
             }
             return true
         }
+    }
+}
+
+// MARK: - UIColor Hex Conversion
+
+extension UIColor {
+    /// Initialize UIColor from hex string
+    convenience init?(hex: String) {
+        var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
+        
+        var rgb: UInt64 = 0
+        guard Scanner(string: hexSanitized).scanHexInt64(&rgb) else { return nil }
+        
+        let r = CGFloat((rgb & 0xFF0000) >> 16) / 255.0
+        let g = CGFloat((rgb & 0x00FF00) >> 8) / 255.0
+        let b = CGFloat(rgb & 0x0000FF) / 255.0
+        
+        self.init(red: r, green: g, blue: b, alpha: 1.0)
+    }
+    
+    /// Convert UIColor to hex string
+    func toHex() -> String {
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        
+        let rgb = Int(r * 255) << 16 | Int(g * 255) << 8 | Int(b * 255)
+        return String(format: "#%06X", rgb)
     }
 }
 
