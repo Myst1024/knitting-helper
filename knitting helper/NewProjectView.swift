@@ -141,13 +141,35 @@ struct NewProjectView: View {
                         }
                         .buttonStyle(.plain)
                         
-                        // Testing: Load sample PDF
+                        // Load sample PDF
                         Button {
                             if let demoURL = Bundle.main.url(forResource: "sample-local-pdf", withExtension: "pdf") {
                                 selectedPDFURL = demoURL
                             }
                         } label: {
-                            Text("Use Sample PDF (for testing)")
+                            Text("Sample PDF")
+                                .font(.caption)
+                                .foregroundColor(.purple)
+                        }
+
+                        // Load short PDF
+                        Button {
+                            if let shortURL = Bundle.main.url(forResource: "short-pattern", withExtension: "pdf") {
+                                selectedPDFURL = shortURL
+                            }
+                        } label: {
+                            Text("Short PDF")
+                                .font(.caption)
+                                .foregroundColor(.purple)
+                        }
+
+                        // Load big PDF
+                        Button {
+                            if let bigURL = Bundle.main.url(forResource: "big-pattern", withExtension: "pdf") {
+                                selectedPDFURL = bigURL
+                            }
+                        } label: {
+                            Text("Big PDF")
                                 .font(.caption)
                                 .foregroundColor(.purple)
                         }
