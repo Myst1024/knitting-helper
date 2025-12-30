@@ -52,12 +52,16 @@ struct PDFKitView: UIViewRepresentable {
         scrollView.addSubview(contentView)
         context.coordinator.contentView = contentView
         
+        // Ensure contentView fills scroll content area and is at least as tall as the scroll view
+        let minHeightConstraint = contentView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor)
+        minHeightConstraint.priority = .required
         NSLayoutConstraint.activate([
             contentView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
             contentView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
             contentView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
-            contentView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor) // width follows scrollView; height computed after layout
+            contentView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor), // width follows scrollView; height computed after layout
+            minHeightConstraint
         ])
         
         // Create tiled canvas view that draws all pages vertically stacked
@@ -75,16 +79,19 @@ struct PDFKitView: UIViewRepresentable {
         overlay.isUserInteractionEnabled = false
         contentView.bringSubviewToFront(overlay)
         
+        // Allow the canvas to be centered vertically inside contentView when it's shorter than the scroll view
         NSLayoutConstraint.activate([
             canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            canvas.topAnchor.constraint(equalTo: contentView.topAnchor),
-            canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            
-            overlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            overlay.topAnchor.constraint(equalTo: contentView.topAnchor),
-            overlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            canvas.topAnchor.constraint(greaterThanOrEqualTo: contentView.topAnchor),
+            canvas.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor),
+            canvas.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+
+            // Pin overlay to the canvas so its coordinate system matches canvas coordinates exactly
+            overlay.leadingAnchor.constraint(equalTo: canvas.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: canvas.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: canvas.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: canvas.bottomAnchor)
         ])
         
         // Gesture recognizers attached to scrollView (for tap/pan on highlights)
@@ -473,7 +480,7 @@ struct PDFKitView: UIViewRepresentable {
         
         func syncOverlay() {
             guard let overlay = overlayView, let canvas = canvasView else { return }
-            overlay.frame = canvas.frame
+            // Overlay is pinned to canvas via Auto Layout; just update its model and redraw
             overlay.highlights = highlights
             overlay.selectedID = selectedHighlightID
             overlay.setNeedsDisplay()
@@ -513,16 +520,19 @@ struct PDFKitView: UIViewRepresentable {
         func addHighlight() {
             guard let canvas = canvasView else { return }
             // Ensure canvas has computed page frames
-            if canvas.pageFrames.isEmpty {
-                layoutCanvas()
-            }
-            // Use current visible area to place highlight
+            if canvas.pageFrames.isEmpty { layoutCanvas() }
+
+            // Compute center point of visible scroll area in canvas coordinates
             guard let scroll = canvas.superview?.superview as? UIScrollView else { return }
-            let visible = CGRect(origin: scroll.contentOffset, size: scroll.bounds.size)
-            
-            // Create full-width highlight in center of visible area
-            let y = visible.midY - Constants.defaultHighlightHeight / 2
-            let rectInCanvas = CGRect(x: 0, y: y, width: canvas.bounds.width, height: Constants.defaultHighlightHeight)
+            // Use the center point of the scroll view's visible bounds; convert(from:) will account for contentOffset
+            let visibleCenterInScroll = CGPoint(x: scroll.bounds.midX, y: scroll.bounds.midY)
+            // Convert that point into canvas coordinates
+            let centerInCanvas = canvas.convert(visibleCenterInScroll, from: scroll)
+
+            // Create full-width highlight centered at that Y, clamped to canvas bounds
+            var highlightY = centerInCanvas.y - Constants.defaultHighlightHeight / 2
+            highlightY = max(0, min(highlightY, max(0, canvas.bounds.height - Constants.defaultHighlightHeight)))
+            let rectInCanvas = CGRect(x: 0, y: highlightY, width: canvas.bounds.width, height: Constants.defaultHighlightHeight)
             let h = Highlight(id: UUID(), rectInCanvas: rectInCanvas, color: .purple)
             highlights.append(h)
             syncOverlay()

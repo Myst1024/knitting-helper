@@ -368,19 +368,6 @@ struct CountersOverlay: View {
             .padding(.top, counters.isEmpty ? 12 : 8)
             .padding(.bottom, 8)
         }
-        .background(
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [Color(.systemBackground), Color(.systemBackground).opacity(0)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 40)
-                
-                Color.clear
-            }
-        )
-        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
     }
     
     private func counterPosition(for index: Int, total: Int) -> CounterPosition {
