@@ -12,19 +12,23 @@ import PDFKit
 struct PDFViewer: View {
     let url: URL
     @Binding var shouldAddHighlight: Bool
+    @Binding var shouldAddNote: Bool
     @Binding var highlights: [CodableHighlight]
+    @Binding var notes: [CodableNote]
     let counterCount: Int
     @Binding var scrollOffsetY: Double
     
     var body: some View {
-        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, highlights: $highlights, counterCount: counterCount, scrollOffsetY: $scrollOffsetY)
+        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, shouldAddNote: $shouldAddNote, highlights: $highlights, notes: $notes, counterCount: counterCount, scrollOffsetY: $scrollOffsetY)
     }
 }
 
 struct PDFKitView: UIViewRepresentable {
     let url: URL
     @Binding var shouldAddHighlight: Bool
+    @Binding var shouldAddNote: Bool
     @Binding var highlights: [CodableHighlight]
+    @Binding var notes: [CodableNote]
     let counterCount: Int
     @Binding var scrollOffsetY: Double
     
@@ -78,6 +82,14 @@ struct PDFKitView: UIViewRepresentable {
         overlay.isUserInteractionEnabled = false
         contentView.bringSubviewToFront(overlay)
         
+        // Overlay for notes (drawn in canvas coordinate space)
+        let noteOverlay = NoteOverlayView()
+        noteOverlay.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(noteOverlay)
+        context.coordinator.noteOverlayView = noteOverlay
+        noteOverlay.isUserInteractionEnabled = true
+        contentView.bringSubviewToFront(noteOverlay)
+        
         // Allow the canvas to be centered vertically inside contentView when it's shorter than the scroll view
         NSLayoutConstraint.activate([
             canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -90,12 +102,19 @@ struct PDFKitView: UIViewRepresentable {
             overlay.leadingAnchor.constraint(equalTo: canvas.leadingAnchor),
             overlay.trailingAnchor.constraint(equalTo: canvas.trailingAnchor),
             overlay.topAnchor.constraint(equalTo: canvas.topAnchor),
-            overlay.bottomAnchor.constraint(equalTo: canvas.bottomAnchor)
+            overlay.bottomAnchor.constraint(equalTo: canvas.bottomAnchor),
+            
+            // Pin note overlay to the canvas as well
+            noteOverlay.leadingAnchor.constraint(equalTo: canvas.leadingAnchor),
+            noteOverlay.trailingAnchor.constraint(equalTo: canvas.trailingAnchor),
+            noteOverlay.topAnchor.constraint(equalTo: canvas.topAnchor),
+            noteOverlay.bottomAnchor.constraint(equalTo: canvas.bottomAnchor)
         ])
         
-        // Gesture recognizers attached to scrollView (for tap/pan on highlights)
+        // Gesture recognizers attached to scrollView (for tap/pan on highlights and notes)
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(PDFViewCoordinator.handleTap(_:)))
         tap.delegate = context.coordinator
+        tap.cancelsTouchesInView = false // Allow touches to pass through to note editors
         scrollView.addGestureRecognizer(tap)
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(PDFViewCoordinator.handlePan(_:)))
         pan.delegate = context.coordinator
@@ -108,8 +127,10 @@ struct PDFKitView: UIViewRepresentable {
         // Force initial layout to compute canvas size
         DispatchQueue.main.async {
             context.coordinator.loadHighlights(highlights)
+            context.coordinator.loadNotes(notes)
             context.coordinator.layoutCanvas()
             context.coordinator.syncOverlay()
+            context.coordinator.syncNoteOverlay()
         }
         
         return scrollView
@@ -139,6 +160,42 @@ struct PDFKitView: UIViewRepresentable {
             context.coordinator.syncOverlay()
             DispatchQueue.main.async { shouldAddHighlight = false }
         }
+        
+        // Add note when requested
+        if shouldAddNote {
+            context.coordinator.addNoteAtCenter()
+            DispatchQueue.main.async { shouldAddNote = false }
+        }
+        
+        // Update notes when they change (compare by ID and count)
+        // Only load notes from binding if coordinator doesn't have them (prevents overwriting notes added by coordinator)
+        let coordinatorNotes = context.coordinator.getNotes()
+        
+        // If coordinator has more notes than binding, coordinator is the source of change - don't overwrite
+        if coordinatorNotes.count > notes.count {
+            // Coordinator just added notes, don't load from binding
+            return
+        }
+        
+        // If coordinator has fewer notes than binding, coordinator deleted notes - don't reload from binding
+        if coordinatorNotes.count < notes.count {
+            // Coordinator just deleted notes, sync overlay but don't reload from binding
+            context.coordinator.syncNoteOverlay()
+            return
+        }
+        
+        // If binding has notes that coordinator doesn't have, load them (external changes)
+        let coordinatorNoteIDs = Set(coordinatorNotes.map { $0.id })
+        let bindingNoteIDs = Set(notes.map { $0.id })
+        
+        if !bindingNoteIDs.isSubset(of: coordinatorNoteIDs) {
+            // Binding has new notes from external source, load them
+            context.coordinator.loadNotes(notes)
+            context.coordinator.syncNoteOverlay()
+        } else if coordinatorNotes.count != notes.count {
+            // Counts differ but no new IDs - might be a deletion, sync overlay
+            context.coordinator.syncNoteOverlay()
+        }
 
         // If the URL/document changed, replace the document and clear cached images
         if context.coordinator.document?.documentURL != url {
@@ -155,13 +212,15 @@ struct PDFKitView: UIViewRepresentable {
             context.coordinator.overlayView?.highlights = []
             context.coordinator.overlayView?.selectedID = nil
             context.coordinator.loadHighlights(highlights)
+            context.coordinator.loadNotes(notes)
             // Force a layout and redraw
             context.coordinator.layoutCanvas()
             context.coordinator.syncOverlay()
+            context.coordinator.syncNoteOverlay()
         }
     }
     
     func makeCoordinator() -> PDFViewCoordinator {
-        PDFViewCoordinator(url: url, highlights: $highlights, scrollOffsetY: $scrollOffsetY)
+        PDFViewCoordinator(url: url, highlights: $highlights, notes: $notes, scrollOffsetY: $scrollOffsetY)
     }
 }

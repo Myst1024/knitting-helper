@@ -30,9 +30,14 @@ struct ContentView: View {
                         PDFViewer(
                             url: project.pdfURL,
                             shouldAddHighlight: $viewModel.shouldAddHighlight,
+                            shouldAddNote: $viewModel.shouldAddNote,
                             highlights: Binding(
                                 get: { viewModel.currentProject?.highlights ?? [] },
                                 set: { viewModel.updateCurrentProjectHighlights($0) }
+                            ),
+                            notes: Binding(
+                                get: { viewModel.currentProject?.notes ?? [] },
+                                set: { viewModel.updateCurrentProjectNotes($0) }
                             ),
                             counterCount: project.counters.count,
                             scrollOffsetY: Binding(
@@ -74,8 +79,9 @@ struct ContentView: View {
                             
                             Spacer()
                             
-                            // Highlight button (bottom left)
-                            HStack {
+                            // Action buttons (bottom left)
+                            HStack(spacing: 12) {
+                                // Highlight button
                                 Button {
                                     viewModel.shouldAddHighlight = true
                                 } label: {
@@ -109,9 +115,45 @@ struct ContentView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .enhancedShadow(color: Color("AccentWarm"), radius: 12, y: 6)
-                                .padding(.leading, 16)
+                                
+                                // Add Note button
+                                Button {
+                                    viewModel.shouldAddNote = true
+                                } label: {
+                                    ZStack {
+                                        // Outer glow
+                                        Circle()
+                                            .fill(LinearGradient.accentLight)
+                                            .frame(width: 48, height: 48)
+                                            .blur(radius: 6)
+                                        
+                                        // Main circle
+                                        Circle()
+                                            .fill(LinearGradient.accent)
+                                            .frame(width: 44, height: 44)
+                                        
+                                        // Inner highlight
+                                        Circle()
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [Color.white.opacity(0.3), Color.clear],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .center
+                                                )
+                                            )
+                                            .frame(width: 44, height: 44)
+                                        
+                                        Image(systemName: "pencil.circle.fill")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
+                                
                                 Spacer()
                             }
+                            .padding(.leading, 16)
                             .padding(.bottom, UIHelper.safeAreaBottomInset() + 16)
                         }
                         .zIndex(1)

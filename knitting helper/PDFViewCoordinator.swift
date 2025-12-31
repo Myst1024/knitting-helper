@@ -12,11 +12,13 @@ import PDFKit
 class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDelegate {
     var url: URL
     var highlightsBinding: Binding<[CodableHighlight]>
+    var notesBinding: Binding<[CodableNote]>
     var scrollOffsetYBinding: Binding<Double>
 
     var contentView: UIView?
     var canvasView: PDFCanvasView?
     var overlayView: HighlightOverlayView?
+    var noteOverlayView: NoteOverlayView?
 
     // Document reference for cache invalidation and change detection
     var document: PDFDocument?
@@ -28,21 +30,155 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     var highlights: [HighlightModel] = []
     var selectedHighlightID: UUID?
     var showingColorPicker = false
+    
+    // Note state
+    var notes: [NoteModel] = []
+    var openNoteIDs: Set<UUID> = []
+    var noteEditorViews: [UUID: UIView] = [:]
+    var noteEditorHostingControllers: [UUID: UIHostingController<NoteEditorView>] = [:]
+    var noteEditorSizes: [UUID: CGSize] = [:]
 
     // Gesture state
     private var isDragging = false
     private var isResizing = false
+    private var isDraggingNote = false
+    private var isResizingNoteEditor = false
     private var resizingEdge: ResizeEdge?
     private var dragStartPointInCanvas: CGPoint?
     private var dragStartRect: CGRect?
+    private var noteDragStartPoint: CGPoint?
+    private var noteDragStartModel: NoteModel?
+    private var noteEditorResizeStartPoint: CGPoint?
+    private var noteEditorResizeStartSize: CGSize?
+    private var noteEditorResizeStartOrigin: CGPoint?
+    private var noteEditorResizeNoteID: UUID?
+    
+    // MARK: - Note Helper Methods
+    
+    /// Finds the index of a note by ID, or nil if not found
+    private func noteIndex(for noteID: UUID) -> Int? {
+        return notes.firstIndex(where: { $0.id == noteID })
+    }
+    
+    /// Gets a note by ID, or nil if not found
+    private func note(for noteID: UUID) -> NoteModel? {
+        return notes.first(where: { $0.id == noteID })
+    }
+    
+    /// Gets the persisted size for a note editor, or returns default size
+    private func getNoteEditorSize(for noteID: UUID) -> CGSize {
+        if let savedSize = noteEditorSizes[noteID] {
+            return savedSize
+        }
+        if let note = note(for: noteID), note.width > 0 && note.height > 0 {
+            let size = CGSize(width: note.width, height: note.height)
+            noteEditorSizes[noteID] = size
+            return size
+        }
+        return CGSize(
+            width: PDFConstants.noteEditorDefaultWidth,
+            height: PDFConstants.noteEditorDefaultHeight
+        )
+    }
+    
+    /// Saves the size for a note editor
+    private func setNoteEditorSize(_ size: CGSize, for noteID: UUID) {
+        noteEditorSizes[noteID] = size
+        if let index = noteIndex(for: noteID) {
+            notes[index].width = size.width
+            notes[index].height = size.height
+        }
+    }
+    
+    /// Validates that canvas and contentView have valid bounds
+    private func validateBounds() -> Bool {
+        guard let canvas = canvasView, let contentView = contentView else { return false }
+        return canvas.bounds.width > 0 && canvas.bounds.height > 0 &&
+               contentView.bounds.width > 0 && contentView.bounds.height > 0
+    }
+    
+    /// Calculates the position for a note editor based on the note's icon position
+    private func calculateNoteEditorPosition(for note: NoteModel) -> CGPoint? {
+        guard let canvas = canvasView, let contentView = contentView else { return nil }
+        guard validateBounds() else { return nil }
+        
+        let notePoint = note.point(in: canvas)
+        guard notePoint.x.isFinite && notePoint.y.isFinite else { return nil }
+        
+        let notePointInContentView = canvas.convert(notePoint, to: contentView)
+        guard notePointInContentView.x.isFinite && notePointInContentView.y.isFinite else { return nil }
+        
+        let editorSize = getNoteEditorSize(for: note.id)
+        let iconLeftEdge = notePointInContentView.x - PDFConstants.noteIconSize / 2
+        let preferredX = iconLeftEdge - 1 // 1pt gap, left-aligned
+        let x = max(8, min(preferredX, contentView.bounds.width - editorSize.width - 8))
+        let y = min(notePointInContentView.y + PDFConstants.noteIconSize / 2 + 1,
+                   max(8, contentView.bounds.height - editorSize.height - 8))
+        
+        guard x.isFinite && y.isFinite && x >= 0 && y >= 0 else { return nil }
+        return CGPoint(x: x, y: y)
+    }
+    
+    /// Calculates the resize handle rect for a note editor view
+    private func resizeHandleRect(for editorView: UIView, expanded: Bool = false) -> CGRect {
+        let size = expanded ? PDFConstants.noteEditorResizeHandleSize + 20 : PDFConstants.noteEditorResizeHandleSize
+        return CGRect(
+            x: editorView.frame.maxX - PDFConstants.noteEditorResizeHandleSize - 4,
+            y: editorView.frame.maxY - PDFConstants.noteEditorResizeHandleSize - 4,
+            width: size,
+            height: size
+        )
+    }
+    
+    /// Calculates the hit area for a note icon at a given point
+    private func noteIconHitArea(at point: CGPoint) -> CGRect {
+        return CGRect(
+            x: point.x - PDFConstants.noteIconSize / 2 - PDFConstants.noteIconTapHitSlop,
+            y: point.y - PDFConstants.noteIconSize / 2 - PDFConstants.noteIconTapHitSlop,
+            width: PDFConstants.noteIconSize + PDFConstants.noteIconTapHitSlop * 2,
+            height: PDFConstants.noteIconSize + PDFConstants.noteIconTapHitSlop * 2
+        )
+    }
+    
+    /// Creates a NoteEditorView with bindings configured for a specific note
+    private func createNoteEditorView(for noteID: UUID) -> NoteEditorView {
+        let defaultSize = getNoteEditorSize(for: noteID)
+        return NoteEditorView(
+            text: Binding(
+                get: { [weak self] in
+                    self?.note(for: noteID)?.text ?? ""
+                },
+                set: { [weak self] newText in
+                    self?.updateNoteText(noteID, text: newText)
+                }
+            ),
+            size: Binding(
+                get: { [weak self] in
+                    self?.noteEditorSizes[noteID] ?? defaultSize
+                },
+                set: { [weak self] newSize in
+                    guard let self = self else { return }
+                    self.noteEditorSizes[noteID] = newSize
+                    self.updateNoteEditorFrame(for: noteID)
+                    self.setNoteEditorSize(newSize, for: noteID)
+                    self.syncNotesToBinding()
+                }
+            ),
+            noteID: noteID,
+            onDelete: { [weak self] in
+                self?.deleteNote(noteID)
+            }
+        )
+    }
     private var resizeAnchorY: CGFloat?
     private var shouldBlockScrolling = false
 
     enum ResizeEdge { case top, bottom }
 
-    init(url: URL, highlights: Binding<[CodableHighlight]>, scrollOffsetY: Binding<Double>) {
+    init(url: URL, highlights: Binding<[CodableHighlight]>, notes: Binding<[CodableNote]>, scrollOffsetY: Binding<Double>) {
         self.url = url
         self.highlightsBinding = highlights
+        self.notesBinding = notes
         self.scrollOffsetYBinding = scrollOffsetY
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(handleOrientationChange), name: UIDevice.orientationDidChangeNotification, object: nil)
@@ -58,6 +194,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             guard let self = self else { return }
             self.layoutCanvas()
             self.syncOverlay()
+            self.syncNoteOverlay()
         }
     }
 
@@ -71,6 +208,11 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     func syncOverlay() {
         guard let overlay = overlayView else { return }
         overlay.update(highlights: highlights, selectedID: selectedHighlightID, canvas: canvasView)
+    }
+    
+    func syncNoteOverlay() {
+        guard let noteOverlay = noteOverlayView else { return }
+        noteOverlay.update(notes: notes, openNoteIDs: openNoteIDs, canvas: canvasView)
     }
 
     // Highlight Persistence
@@ -90,6 +232,87 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         // Already stored as page+fractions in the canonical model
         return highlights.map { h in
             CodableHighlight(id: h.id, startPage: h.startPage, startFraction: h.startFraction, endPage: h.endPage, endFraction: h.endFraction, colorHex: h.color.toHex())
+        }
+    }
+    
+    // Note Persistence
+    func loadNotes(_ codableNotes: [CodableNote]) {
+        // Close all existing note editors first to prevent duplicates
+        // Do this without syncing to binding to avoid triggering reloads
+        let existingOpenNoteIDs = Array(openNoteIDs)
+        for noteID in existingOpenNoteIDs {
+            openNoteIDs.remove(noteID)
+            if let editorView = noteEditorViews[noteID] {
+                editorView.removeFromSuperview()
+                noteEditorViews.removeValue(forKey: noteID)
+            }
+            noteEditorHostingControllers.removeValue(forKey: noteID)
+        }
+        
+        var models: [NoteModel] = []
+        var notesToOpen: [UUID] = []
+        
+        for codable in codableNotes {
+            let model = NoteModel(
+                id: codable.id,
+                page: codable.page,
+                xFraction: codable.xFraction,
+                yFraction: codable.yFraction,
+                text: codable.text,
+                isOpen: codable.isOpen,
+                width: codable.width,
+                height: codable.height
+            )
+            models.append(model)
+            
+            // Restore size if it was saved
+            if codable.width > 0 && codable.height > 0 {
+                noteEditorSizes[codable.id] = CGSize(width: codable.width, height: codable.height)
+            } else {
+                // Clear any stale size entry
+                noteEditorSizes.removeValue(forKey: codable.id)
+            }
+            
+            // Track notes that should be opened
+            if codable.isOpen {
+                notesToOpen.append(codable.id)
+            }
+        }
+        notes = models
+        
+        // Restore open state
+        openNoteIDs = Set(notesToOpen)
+        
+        syncNoteOverlay()
+        
+        // Open note editors for notes that were previously open
+        // Delay to ensure canvas is laid out
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            for noteID in notesToOpen {
+                // Only open if still in openNoteIDs and note still exists
+                if self.openNoteIDs.contains(noteID) && self.notes.contains(where: { $0.id == noteID }) {
+                    self.openNoteEditor(for: noteID)
+                }
+            }
+        }
+    }
+    
+    func getNotes() -> [CodableNote] {
+        return notes.map { n in
+            let size = getNoteEditorSize(for: n.id)
+            let isCurrentlyOpen = openNoteIDs.contains(n.id)
+            
+            return CodableNote(
+                id: n.id,
+                page: n.page,
+                xFraction: n.xFraction,
+                yFraction: n.yFraction,
+                text: n.text,
+                isOpen: isCurrentlyOpen,
+                width: size.width,
+                height: size.height
+            )
         }
     }
 
@@ -143,6 +366,54 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         let height = max(PDFConstants.minHighlightHeight, maxY - y)
         return CGRect(x: 0, y: y, width: canvas.bounds.width, height: height)
     }
+    
+    // MARK: - Note coordinate conversion helpers
+    private func canvasPointToPageFraction(_ point: CGPoint) -> (Int, CGFloat, CGFloat) {
+        guard let canvas = canvasView, !canvas.pageFrames.isEmpty else {
+            // Fallback: treat entire canvas as page 0
+            let height = max(1, canvasView?.bounds.height ?? 1)
+            let width = max(1, canvasView?.bounds.width ?? 1)
+            let xFrac = max(0, min(1, point.x / width))
+            let yFrac = max(0, min(1, point.y / height))
+            return (0, xFrac, yFrac)
+        }
+        
+        // Find which page contains this point
+        for (pageIndex, frame) in canvas.pageFrames.sorted(by: { $0.key < $1.key }) {
+            if frame.contains(point) {
+                let xFrac = (point.x - frame.minX) / max(1, frame.width)
+                let yFrac = (point.y - frame.minY) / max(1, frame.height)
+                return (pageIndex, max(0, min(1, xFrac)), max(0, min(1, yFrac)))
+            }
+        }
+        
+        // If point is outside all pages, find closest page
+        var closestPage = 0
+        var minDistance: CGFloat = .greatestFiniteMagnitude
+        for (pageIndex, frame) in canvas.pageFrames {
+            let center = CGPoint(x: frame.midX, y: frame.midY)
+            let distance = sqrt(pow(point.x - center.x, 2) + pow(point.y - center.y, 2))
+            if distance < minDistance {
+                minDistance = distance
+                closestPage = pageIndex
+            }
+        }
+        
+        if let frame = canvas.pageFrames[closestPage] {
+            let xFrac = (point.x - frame.minX) / max(1, frame.width)
+            let yFrac = (point.y - frame.minY) / max(1, frame.height)
+            return (closestPage, max(0, min(1, xFrac)), max(0, min(1, yFrac)))
+        }
+        
+        return (0, 0.5, 0.5)
+    }
+    
+    private func syncNotesToBinding() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.notesBinding.wrappedValue = self.getNotes()
+        }
+    }
 
     private func syncHighlightsToBinding() {
         DispatchQueue.main.async { [weak self] in
@@ -175,6 +446,40 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     @objc func handleTap(_ gesture: UITapGestureRecognizer) {
         guard let canvas = canvasView, let overlay = overlayView else { return }
         let location = gesture.location(in: canvas)
+        
+        // Check if tap is inside any note editor view - if so, let SwiftUI handle it
+        if let contentView = contentView {
+            let locationInContentView = canvas.convert(location, to: contentView)
+            for (_, editorView) in noteEditorViews {
+                if editorView.frame.contains(locationInContentView) {
+                    // Tap is inside a note editor - let SwiftUI handle it
+                    return
+                }
+            }
+        }
+        
+        // Check for note editor resize handle tap (in contentView coordinates)
+        if let contentView = contentView {
+            let locationInContentView = canvas.convert(location, to: contentView)
+            for (_, editorView) in noteEditorViews {
+                if resizeHandleRect(for: editorView).contains(locationInContentView) {
+                    // Don't toggle, just return (resize will be handled by pan gesture)
+                    return
+                }
+            }
+        }
+        
+        // Check for note tap
+        if let noteOverlay = noteOverlayView {
+            for note in notes {
+                let notePoint = note.point(in: canvas)
+                if noteIconHitArea(at: notePoint).contains(location) {
+                    toggleNoteEditor(for: note.id)
+                    return
+                }
+            }
+        }
+        
         if let selectedID = selectedHighlightID,
            let selectedHighlight = highlights.first(where: { $0.id == selectedID }) {
             let selRect = selectedHighlight.rect(in: canvas)
@@ -211,62 +516,183 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         case .began:
             shouldBlockScrolling = true
             var foundHandle = false
-            for h in highlights {
-                let rect = h.rect(in: canvas)
-                if let edge = detectEdgeHandle(at: location, for: rect) {
-                    selectedHighlightID = h.id
-                    overlay.selectedID = selectedHighlightID
-                    isResizing = true
-                    resizingEdge = edge
-                    dragStartPointInCanvas = location
-                    dragStartRect = rect
-                    resizeAnchorY = (edge == .top) ? rect.maxY : rect.minY
-                    foundHandle = true
-                    break
+            
+            // Check for note editor resize handle first (in contentView coordinates)
+            if let contentView = contentView {
+                let locationInContentView = canvas.convert(location, to: contentView)
+                for (noteID, editorView) in noteEditorViews {
+                    if resizeHandleRect(for: editorView, expanded: true).contains(locationInContentView) {
+                        isResizingNoteEditor = true
+                        noteEditorResizeStartPoint = locationInContentView
+                        noteEditorResizeStartSize = editorView.frame.size
+                        noteEditorResizeStartOrigin = editorView.frame.origin
+                        noteEditorResizeNoteID = noteID
+                        foundHandle = true
+                        // Disable scrolling to prevent interference
+                        if let scroll = canvas.superview?.superview as? UIScrollView {
+                            scroll.isScrollEnabled = false
+                        }
+                        break
+                    }
                 }
             }
+            
+            // Check for note drag
+            if !foundHandle, let noteOverlay = noteOverlayView {
+                for note in notes {
+                    let notePoint = note.point(in: canvas)
+                    if noteIconHitArea(at: notePoint).contains(location) {
+                        isDraggingNote = true
+                        noteDragStartPoint = location
+                        noteDragStartModel = note
+                        foundHandle = true
+                        if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = false }
+                        break
+                    }
+                }
+            }
+            
             if !foundHandle {
                 for h in highlights {
                     let rect = h.rect(in: canvas)
-                    let hitArea = rect.insetBy(dx: -PDFConstants.highlightTapHitSlop, dy: -PDFConstants.highlightTapHitSlop)
-                    if hitArea.contains(location) {
+                    if let edge = detectEdgeHandle(at: location, for: rect) {
                         selectedHighlightID = h.id
                         overlay.selectedID = selectedHighlightID
-                        isDragging = true
+                        isResizing = true
+                        resizingEdge = edge
                         dragStartPointInCanvas = location
                         dragStartRect = rect
+                        resizeAnchorY = (edge == .top) ? rect.maxY : rect.minY
                         foundHandle = true
                         break
                     }
                 }
-                if !foundHandle { shouldBlockScrolling = false }
+                if !foundHandle {
+                    for h in highlights {
+                        let rect = h.rect(in: canvas)
+                        let hitArea = rect.insetBy(dx: -PDFConstants.highlightTapHitSlop, dy: -PDFConstants.highlightTapHitSlop)
+                        if hitArea.contains(location) {
+                            selectedHighlightID = h.id
+                            overlay.selectedID = selectedHighlightID
+                            isDragging = true
+                            dragStartPointInCanvas = location
+                            dragStartRect = rect
+                            foundHandle = true
+                            break
+                        }
+                    }
+                    if !foundHandle { shouldBlockScrolling = false }
+                }
             }
             if isDragging || isResizing { if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = false } }
             overlay.update(highlights: highlights, selectedID: selectedHighlightID, canvas: canvasView)
         case .changed:
-            guard let startPoint = dragStartPointInCanvas, let startRect = dragStartRect, let selectedID = selectedHighlightID else { return }
-            guard isDragging || isResizing else { return }
-            guard let hIndex = highlights.firstIndex(where: { $0.id == selectedID }) else { return }
-            guard let canvas = canvasView else { return }
-            let dy = location.y - startPoint.y
-            if isDragging {
-                let newY = startRect.origin.y + dy
-                // Compute new rect in canvas coordinates and convert to page fractions
-                let newRect = CGRect(x: 0, y: max(0, min(newY, max(0, canvas.bounds.height - (startRect.height)))), width: canvas.bounds.width, height: startRect.height)
-                let (sPage, sFrac, ePage, eFrac) = canvasRectToPageRange(newRect)
-                highlights[hIndex].set(fromPageRange: sPage, startFraction: sFrac, endPage: ePage, endFraction: eFrac)
-            } else if isResizing, let anchorY = resizeAnchorY {
-                let minY = min(anchorY, location.y)
-                let maxY = max(anchorY, location.y)
-                let newRect = CGRect(x: 0, y: minY, width: canvas.bounds.width, height: max(PDFConstants.minHighlightHeight, maxY - minY))
-                let (sPage, sFrac, ePage, eFrac) = canvasRectToPageRange(newRect)
-                highlights[hIndex].set(fromPageRange: sPage, startFraction: sFrac, endPage: ePage, endFraction: eFrac)
-            } else { return }
-            overlay.update(highlights: highlights, selectedID: selectedHighlightID, canvas: canvasView)
+            if isResizingNoteEditor {
+                guard let startPoint = noteEditorResizeStartPoint,
+                      let startSize = noteEditorResizeStartSize,
+                      let noteID = noteEditorResizeNoteID,
+                      let editorView = noteEditorViews[noteID],
+                      let contentView = contentView else { return }
+                
+                let locationInContentView = canvas.convert(location, to: contentView)
+                let dx = locationInContentView.x - startPoint.x
+                let dy = locationInContentView.y - startPoint.y
+                
+                let newWidth = max(PDFConstants.noteEditorMinWidth, min(PDFConstants.noteEditorMaxWidth, startSize.width + dx))
+                let newHeight = max(PDFConstants.noteEditorMinHeight, min(PDFConstants.noteEditorMaxHeight, startSize.height + dy))
+                
+                let newSize = CGSize(width: newWidth, height: newHeight)
+                
+                // Keep the top-left corner fixed using the stored origin
+                let fixedOrigin = noteEditorResizeStartOrigin ?? editorView.frame.origin
+                
+                // Update the stored size
+                setNoteEditorSize(newSize, for: noteID)
+                
+                // Update the frame
+                editorView.frame = CGRect(origin: fixedOrigin, size: newSize)
+                
+                // Force SwiftUI to update by recreating the root view with the new size binding
+                if let hostingController = noteEditorHostingControllers[noteID] {
+                    hostingController.rootView = createNoteEditorView(for: noteID)
+                }
+            } else if isDraggingNote {
+                guard let startPoint = noteDragStartPoint, let startModel = noteDragStartModel else { return }
+                guard let noteIndex = notes.firstIndex(where: { $0.id == startModel.id }) else { return }
+                guard let canvas = canvasView else { return }
+                
+                // Ensure canvas is laid out
+                if canvas.pageFrames.isEmpty {
+                    layoutCanvas()
+                }
+                
+                let dx = location.x - startPoint.x
+                let dy = location.y - startPoint.y
+                let currentPoint = startModel.point(in: canvas)
+                let newPoint = CGPoint(
+                    x: max(0, min(canvas.bounds.width, currentPoint.x + dx)),
+                    y: max(0, min(canvas.bounds.height, currentPoint.y + dy))
+                )
+                let (page, xFrac, yFrac) = canvasPointToPageFraction(newPoint)
+                notes[noteIndex].set(fromPage: page, xFraction: xFrac, yFraction: yFrac)
+                syncNoteOverlay()
+                // Update editor position if open - defer to ensure layout is complete
+                let draggedNoteID = notes[noteIndex].id
+                if openNoteIDs.contains(draggedNoteID) {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.updateNoteEditorPosition(for: draggedNoteID)
+                    }
+                }
+            } else {
+                guard let startPoint = dragStartPointInCanvas, let startRect = dragStartRect, let selectedID = selectedHighlightID else { return }
+                guard isDragging || isResizing else { return }
+                guard let hIndex = highlights.firstIndex(where: { $0.id == selectedID }) else { return }
+                guard let canvas = canvasView else { return }
+                let dy = location.y - startPoint.y
+                if isDragging {
+                    let newY = startRect.origin.y + dy
+                    // Compute new rect in canvas coordinates and convert to page fractions
+                    let newRect = CGRect(x: 0, y: max(0, min(newY, max(0, canvas.bounds.height - (startRect.height)))), width: canvas.bounds.width, height: startRect.height)
+                    let (sPage, sFrac, ePage, eFrac) = canvasRectToPageRange(newRect)
+                    highlights[hIndex].set(fromPageRange: sPage, startFraction: sFrac, endPage: ePage, endFraction: eFrac)
+                } else if isResizing, let anchorY = resizeAnchorY {
+                    let minY = min(anchorY, location.y)
+                    let maxY = max(anchorY, location.y)
+                    let newRect = CGRect(x: 0, y: minY, width: canvas.bounds.width, height: max(PDFConstants.minHighlightHeight, maxY - minY))
+                    let (sPage, sFrac, ePage, eFrac) = canvasRectToPageRange(newRect)
+                    highlights[hIndex].set(fromPageRange: sPage, startFraction: sFrac, endPage: ePage, endFraction: eFrac)
+                } else { return }
+                overlay.update(highlights: highlights, selectedID: selectedHighlightID, canvas: canvasView)
+            }
         case .ended, .cancelled, .failed:
             // Nothing extra needed here; highlights already canonicalized during interactions.
-
-            syncHighlightsToBinding()
+            if isResizingNoteEditor {
+                // Save the final size to the note model when resize ends
+                if let noteID = noteEditorResizeNoteID,
+                   let finalSize = noteEditorSizes[noteID],
+                   let index = notes.firstIndex(where: { $0.id == noteID }) {
+                    notes[index].width = finalSize.width
+                    notes[index].height = finalSize.height
+                    syncNotesToBinding()
+                }
+                
+                isResizingNoteEditor = false
+                noteEditorResizeStartPoint = nil
+                noteEditorResizeStartSize = nil
+                noteEditorResizeStartOrigin = nil
+                noteEditorResizeNoteID = nil
+                // Re-enable scrolling
+                if let scroll = canvas.superview?.superview as? UIScrollView {
+                    scroll.isScrollEnabled = true
+                }
+            } else if isDraggingNote {
+                syncNotesToBinding()
+                isDraggingNote = false
+                noteDragStartPoint = nil
+                noteDragStartModel = nil
+            } else {
+                syncHighlightsToBinding()
+            }
             isDragging = false; isResizing = false; resizingEdge = nil; dragStartPointInCanvas = nil; dragStartRect = nil; resizeAnchorY = nil; shouldBlockScrolling = false
             if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = true }
         default: break
@@ -320,15 +746,72 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
 
     // UIScrollViewDelegate
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { return contentView }
-    func scrollViewDidZoom(_ scrollView: UIScrollView) { syncOverlay() }
-    func scrollViewDidScroll(_ scrollView: UIScrollView) { syncOverlay(); scrollOffsetYBinding.wrappedValue = Double(scrollView.contentOffset.y) }
+    func scrollViewDidZoom(_ scrollView: UIScrollView) { 
+        syncOverlay()
+        syncNoteOverlay()
+        // Update editor positions - defer to ensure layout is complete after zoom
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            for noteID in self.openNoteIDs {
+                self.updateNoteEditorPosition(for: noteID)
+            }
+        }
+    }
+    func scrollViewDidScroll(_ scrollView: UIScrollView) { 
+        syncOverlay()
+        syncNoteOverlay()
+        scrollOffsetYBinding.wrappedValue = Double(scrollView.contentOffset.y)
+        // Update editor positions - defer to avoid layout issues during scrolling
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            for noteID in self.openNoteIDs {
+                self.updateNoteEditorPosition(for: noteID)
+            }
+        }
+    }
 
     // UIGestureRecognizerDelegate
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { return !shouldBlockScrolling }
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        // Don't handle taps that are inside note editor views - let SwiftUI handle them
+        if gestureRecognizer is UITapGestureRecognizer, let contentView = contentView {
+            let location = touch.location(in: contentView)
+            for (_, editorView) in noteEditorViews {
+                if editorView.frame.contains(location) {
+                    return false // Let the note editor handle the touch
+                }
+            }
+        }
+        return true
+    }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer is UIPanGestureRecognizer, let canvas = canvasView {
             let loc = gestureRecognizer.location(in: canvas)
+            
+            // Check for note editor resize handle first (before checking note drag)
+            if let contentView = contentView {
+                let locationInContentView = canvas.convert(loc, to: contentView)
+                for (_, editorView) in noteEditorViews {
+                    if resizeHandleRect(for: editorView, expanded: true).contains(locationInContentView) {
+                        // Block scrolling when resizing
+                        if let scroll = canvas.superview?.superview as? UIScrollView {
+                            scroll.isScrollEnabled = false
+                        }
+                        return true
+                    }
+                }
+            }
+            
+            // Check for note drag
+            if notes.contains(where: { note in
+                let notePoint = note.point(in: canvas)
+                return noteIconHitArea(at: notePoint).contains(loc)
+            }) {
+                return true
+            }
+            // Check for highlight drag/resize
             return highlights.contains { h in
                 let rect = h.rect(in: canvas)
                 let hitArea = rect.insetBy(dx: -PDFConstants.highlightTapHitSlop, dy: -PDFConstants.highlightTapHitSlop)
@@ -336,6 +819,221 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             }
         }
         return true
+    }
+    
+    // MARK: - Note Management
+    @objc func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began,
+              let canvas = canvasView else { return }
+        let location = gesture.location(in: canvas)
+        addNote(at: location)
+    }
+    
+    func addNote(at location: CGPoint) {
+        guard let canvas = canvasView else { return }
+        if canvas.pageFrames.isEmpty { layoutCanvas() }
+        
+        let (page, xFrac, yFrac) = canvasPointToPageFraction(location)
+        let note = NoteModel(id: UUID(), page: page, xFraction: xFrac, yFraction: yFrac, text: "")
+        notes.append(note)
+        syncNoteOverlay()
+        syncNotesToBinding()
+        // Open the editor for the new note
+        toggleNoteEditor(for: note.id)
+    }
+    
+    func toggleNoteEditor(for noteID: UUID) {
+        if openNoteIDs.contains(noteID) {
+            closeNoteEditor(for: noteID)
+        } else {
+            openNoteEditor(for: noteID)
+        }
+    }
+    
+    func openNoteEditor(for noteID: UUID) {
+        guard let note = note(for: noteID),
+              let canvas = canvasView,
+              let contentView = contentView else { return }
+        
+        // If editor is already open, don't create a duplicate
+        if noteEditorViews[noteID] != nil {
+            return
+        }
+        
+        // Ensure canvas is laid out before positioning
+        if canvas.pageFrames.isEmpty {
+            layoutCanvas()
+        }
+        
+        openNoteIDs.insert(noteID)
+        
+        // Update the note model's isOpen state
+        if let index = noteIndex(for: noteID) {
+            notes[index].isOpen = true
+            syncNotesToBinding()
+        }
+        
+        syncNoteOverlay()
+        
+        // Calculate position BEFORE creating the view to avoid flickering
+        guard let position = calculateNoteEditorPosition(for: note) else {
+            // If bounds aren't ready, defer opening
+            DispatchQueue.main.async { [weak self] in
+                self?.openNoteEditor(for: noteID)
+            }
+            return
+        }
+        
+        let editorSize = getNoteEditorSize(for: noteID)
+        
+        // Create SwiftUI hosting controller for the note editor
+        let hostingController = UIHostingController(rootView: createNoteEditorView(for: noteID))
+        hostingController.view.backgroundColor = .clear
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = true
+        
+        // Hide the view completely until positioned
+        hostingController.view.isHidden = true
+        
+        // Set frame BEFORE adding to view hierarchy to prevent flickering
+        hostingController.view.frame = CGRect(origin: position, size: editorSize)
+        
+        // Now add to view hierarchy
+        contentView.addSubview(hostingController.view)
+        
+        // Store references
+        noteEditorViews[noteID] = hostingController.view
+        noteEditorHostingControllers[noteID] = hostingController
+        
+        // Show the view after it's been added and positioned
+        DispatchQueue.main.async { [weak hostingController, weak self] in
+            guard let view = hostingController?.view,
+                  let self = self else { return }
+            // Double-check the frame is correct
+            if view.frame.origin.x < 10 && view.frame.origin.y < 10 {
+                // Position was lost, recalculate
+                self.updateNoteEditorPosition(for: noteID)
+            }
+            // Show the view
+            view.isHidden = false
+        }
+    }
+    
+    func updateNoteEditorFrame(for noteID: UUID) {
+        guard let editorView = noteEditorViews[noteID] else { return }
+        let size = getNoteEditorSize(for: noteID)
+        editorView.frame.size = size
+    }
+    
+    func closeNoteEditor(for noteID: UUID) {
+        openNoteIDs.remove(noteID)
+        syncNoteOverlay()
+        
+        // Save the current size to the note model before closing
+        if let size = noteEditorSizes[noteID] {
+            setNoteEditorSize(size, for: noteID)
+        }
+        if let index = noteIndex(for: noteID) {
+            notes[index].isOpen = false
+            syncNotesToBinding()
+        }
+        
+        if let editorView = noteEditorViews[noteID] {
+            editorView.removeFromSuperview()
+            noteEditorViews.removeValue(forKey: noteID)
+        }
+        noteEditorHostingControllers.removeValue(forKey: noteID)
+        // Keep the size in noteEditorSizes so it's remembered if reopened
+    }
+    
+    func updateNoteEditorPosition(for noteID: UUID) {
+        guard let note = note(for: noteID),
+              let editorView = noteEditorViews[noteID],
+              let canvas = canvasView else { return }
+        
+        // Ensure canvas is laid out and has valid bounds
+        if canvas.pageFrames.isEmpty {
+            layoutCanvas()
+        }
+        
+        // Validate that we have valid bounds
+        guard validateBounds() else {
+            // If bounds aren't valid yet, try again after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.updateNoteEditorPosition(for: noteID)
+            }
+            return
+        }
+        
+        // Calculate new position
+        guard let position = calculateNoteEditorPosition(for: note) else {
+            return
+        }
+        
+        // Update frame directly
+        editorView.frame.origin = position
+    }
+    
+    func updateNoteText(_ noteID: UUID, text: String) {
+        guard let index = noteIndex(for: noteID) else { return }
+        notes[index].text = text
+        syncNotesToBinding()
+    }
+    
+    func deleteNote(_ noteID: UUID) {
+        // Present confirmation alert using UIKit
+        guard let hostingController = noteEditorHostingControllers[noteID] else {
+            // If we can't find the hosting controller, just delete without confirmation
+            closeNoteEditor(for: noteID)
+            notes.removeAll { $0.id == noteID }
+            noteEditorSizes.removeValue(forKey: noteID)
+            syncNoteOverlay()
+            syncNotesToBinding()
+            return
+        }
+        
+        let alert = UIAlertController(
+            title: "Delete Note?",
+            message: "Are you sure you want to delete this note? This action cannot be undone.",
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
+            guard let self = self else { return }
+            self.closeNoteEditor(for: noteID)
+            self.notes.removeAll { $0.id == noteID }
+            self.noteEditorSizes.removeValue(forKey: noteID)
+            self.syncNoteOverlay()
+            self.syncNotesToBinding()
+        })
+        
+        // Find the topmost view controller to present from
+        var presentingVC: UIViewController = hostingController
+        while let parent = presentingVC.parent {
+            presentingVC = parent
+        }
+        while let presented = presentingVC.presentedViewController {
+            presentingVC = presented
+        }
+        
+        // If we still can't find a good presenter, try to get the window's root
+        if presentingVC == hostingController, let window = hostingController.view.window {
+            presentingVC = window.rootViewController ?? hostingController
+        }
+        
+        presentingVC.present(alert, animated: true)
+    }
+    
+    func addNoteAtCenter() {
+        guard let canvas = canvasView else { return }
+        if canvas.pageFrames.isEmpty { layoutCanvas() }
+        guard let scroll = canvas.superview?.superview as? UIScrollView else { return }
+        
+        // Use the exact same approach as addHighlight - it works correctly
+        let visibleCenterInScroll = CGPoint(x: scroll.bounds.midX, y: scroll.bounds.midY)
+        let centerInCanvas = canvas.convert(visibleCenterInScroll, from: scroll)
+        
+        addNote(at: centerInCanvas)
     }
 }
 

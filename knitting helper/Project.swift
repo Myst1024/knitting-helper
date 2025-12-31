@@ -38,24 +38,62 @@ struct CodableHighlight: Identifiable, Codable {
     }
 }
 
-/// Represents a knitting project with a PDF pattern, counters, and highlights
+/// Codable version of a note for persistence
+struct CodableNote: Identifiable, Codable, Equatable {
+    let id: UUID
+    // Represent note position as page/fraction coordinates so positions are
+    // invariant across orientation and scaling. xFraction/yFraction are in 0..1
+    // relative to the page's width/height on the canvas.
+    var page: Int
+    var xFraction: CGFloat // 0..1 relative to page width
+    var yFraction: CGFloat // 0..1 relative to page height
+    var text: String
+    var isOpen: Bool // Whether the note editor is currently open
+    var width: CGFloat // Note editor width
+    var height: CGFloat // Note editor height
+
+    init(id: UUID = UUID(), page: Int, xFraction: CGFloat, yFraction: CGFloat, text: String = "", isOpen: Bool = false, width: CGFloat = 0, height: CGFloat = 0) {
+        self.id = id
+        self.page = page
+        self.xFraction = xFraction
+        self.yFraction = yFraction
+        self.text = text
+        self.isOpen = isOpen
+        self.width = width
+        self.height = height
+    }
+    
+    static func == (lhs: CodableNote, rhs: CodableNote) -> Bool {
+        return lhs.id == rhs.id && lhs.page == rhs.page &&
+               abs(lhs.xFraction - rhs.xFraction) < 0.001 &&
+               abs(lhs.yFraction - rhs.yFraction) < 0.001 &&
+               lhs.text == rhs.text &&
+               lhs.isOpen == rhs.isOpen &&
+               abs(lhs.width - rhs.width) < 0.001 &&
+               abs(lhs.height - rhs.height) < 0.001
+    }
+}
+
+/// Represents a knitting project with a PDF pattern, counters, highlights, and notes
 struct Project: Identifiable, Codable {
     let id: UUID
     var name: String
     var pdfURL: URL
     var counters: [Counter] = []
     var highlights: [CodableHighlight] = []
+    var notes: [CodableNote] = []
     var scrollOffsetY: Double = 0
     var timerElapsedSeconds: Double = 0
     var timerIsRunning: Bool = false
     var timerLastStartTime: Date?
     
-    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerIsRunning: Bool = false, timerLastStartTime: Date? = nil) {
+    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], notes: [CodableNote] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerIsRunning: Bool = false, timerLastStartTime: Date? = nil) {
         self.id = id
         self.name = name
         self.pdfURL = pdfURL
         self.counters = counters
         self.highlights = highlights
+        self.notes = notes
         self.scrollOffsetY = scrollOffsetY
         self.timerElapsedSeconds = timerElapsedSeconds
         self.timerIsRunning = timerIsRunning

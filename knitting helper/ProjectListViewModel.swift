@@ -15,6 +15,7 @@ class ProjectListViewModel: ObservableObject {
     @Published var currentProject: Project?
     @Published var showNewProjectView = false
     @Published var shouldAddHighlight = false
+    @Published var shouldAddNote = false
     @Published var projectToDelete: Project?
     @Published var showDeleteConfirmation = false
     @Published var projectToRename: Project?
@@ -156,6 +157,16 @@ class ProjectListViewModel: ObservableObject {
     func updateCurrentProjectScrollOffset(_ offset: Double) {
         guard var current = currentProject else { return }
         current.scrollOffsetY = offset
+        currentProject = current
+        // Also update in projects array
+        if let index = projects.firstIndex(where: { $0.id == current.id }) {
+            projects[index] = current
+        }
+    }
+    
+    func updateCurrentProjectNotes(_ notes: [CodableNote]) {
+        guard var current = currentProject else { return }
+        current.notes = notes
         currentProject = current
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {

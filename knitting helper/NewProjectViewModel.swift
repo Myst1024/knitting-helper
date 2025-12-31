@@ -68,7 +68,7 @@ class NewProjectViewModel: ObservableObject {
             Task.detached(priority: .userInitiated) {
                 do {
                     let fileName = sourceURL.lastPathComponent
-                    let copiedURL = try Project.copyPDFToDocuments(from: sourceURL, withName: fileName)
+                    let copiedURL = try await Project.copyPDFToDocuments(from: sourceURL, withName: fileName)
                     continuation.resume(returning: copiedURL)
                 } catch {
                     let projectError: ProjectError

@@ -37,5 +37,16 @@ enum PDFConstants {
     static let minimumZoomScale: CGFloat = 0.5
     static let maximumZoomScale: CGFloat = 4.0
     static let imageCacheLimit: Int = 150 * 1024 * 1024 // ~150 MB
+    
+    // Note constants
+    static let noteIconSize: CGFloat = 26
+    static let noteIconTapHitSlop: CGFloat = 10
+    static let noteEditorMinWidth: CGFloat = 120
+    static let noteEditorMaxWidth: CGFloat = 350
+    static let noteEditorMinHeight: CGFloat = 40
+    static let noteEditorMaxHeight: CGFloat = 300
+    static let noteEditorDefaultWidth: CGFloat = 200
+    static let noteEditorDefaultHeight: CGFloat = 120
+    static let noteEditorResizeHandleSize: CGFloat = 20
 }
 
