@@ -22,36 +22,20 @@ struct NewProjectView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var project: Project?
     
-    @State private var projectName: String = "My Project"
-    @State private var showDocumentPicker = false
-    @State private var selectedPDFURL: URL?
-    @State private var isCreating = false
-    @State private var errorMessage: String?
+    @StateObject private var viewModel = NewProjectViewModel()
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 24) {
                 // Icon
                 ZStack {
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color("AccentColor").opacity(0.18), Color("AccentColor").opacity(0.08)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .accentGradientFill()
                         .frame(width: 100, height: 100)
                     
                     Image(systemName: "folder.badge.plus")
                         .font(.system(size: Constants.iconSize))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .accentGradient()
                 }
                 .padding(.top, 40)
                 
@@ -66,7 +50,7 @@ struct NewProjectView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         
-                        TextField("My Project", text: $projectName)
+                        TextField("My Project", text: $viewModel.projectName)
                             .textFieldStyle(.roundedBorder)
                             .font(.body)
                     }
@@ -79,33 +63,21 @@ struct NewProjectView: View {
                             .foregroundColor(.secondary)
                         
                         Button {
-                            showDocumentPicker = true
+                            viewModel.showDocumentPicker = true
                         } label: {
                             HStack(spacing: 14) {
                                 ZStack {
                                     Circle()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [Color("AccentColor").opacity(0.18), Color("AccentColor").opacity(0.08)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
+                                        .accentGradientFill()
                                         .frame(width: 44, height: 44)
                                     
-                                    Image(systemName: selectedPDFURL == nil ? "doc.badge.plus" : "doc.fill")
+                                    Image(systemName: viewModel.selectedPDFURL == nil ? "doc.badge.plus" : "doc.fill")
                                         .font(.title3)
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
+                                        .accentGradient()
                                 }
                                 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    if let url = selectedPDFURL {
+                                    if let url = viewModel.selectedPDFURL {
                                         Text(url.lastPathComponent)
                                             .font(.body)
                                             .fontWeight(.medium)
@@ -143,9 +115,7 @@ struct NewProjectView: View {
                         
                         // Load sample PDF
                         Button {
-                            if let demoURL = Bundle.main.url(forResource: "sample-local-pdf", withExtension: "pdf") {
-                                selectedPDFURL = demoURL
-                            }
+                            viewModel.loadSamplePDF(name: "sample-local-pdf")
                         } label: {
                             Text("Sample PDF")
                                 .font(.caption)
@@ -154,9 +124,7 @@ struct NewProjectView: View {
 
                         // Load short PDF
                         Button {
-                            if let shortURL = Bundle.main.url(forResource: "short-pattern", withExtension: "pdf") {
-                                selectedPDFURL = shortURL
-                            }
+                            viewModel.loadSamplePDF(name: "short-pattern")
                         } label: {
                             Text("Short PDF")
                                 .font(.caption)
@@ -165,9 +133,7 @@ struct NewProjectView: View {
 
                         // Load big PDF
                         Button {
-                            if let bigURL = Bundle.main.url(forResource: "big-pattern", withExtension: "pdf") {
-                                selectedPDFURL = bigURL
-                            }
+                            viewModel.loadSamplePDF(name: "big-pattern")
                         } label: {
                             Text("Big PDF")
                                 .font(.caption)
@@ -177,7 +143,7 @@ struct NewProjectView: View {
                     .padding(.horizontal)
                 }
                 
-                if let errorMessage {
+                if let errorMessage = viewModel.errorMessage {
                     Text(errorMessage)
                         .font(.caption)
                         .foregroundColor(.red)
@@ -188,24 +154,24 @@ struct NewProjectView: View {
                 
                 // Create button
                 Button {
-                    createProject()
+                    Task {
+                        do {
+                            let newProject = try await viewModel.createProject()
+                            project = newProject
+                            dismiss()
+                        } catch {
+                            // Error is already handled in viewModel
+                        }
+                    }
                 } label: {
                     ZStack {
-                        if isFormValid {
-                            LinearGradient(
-                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                        if viewModel.isFormValid {
+                            LinearGradient.accent
                         } else {
-                            LinearGradient(
-                                colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                            LinearGradient.disabled
                         }
                         
-                        if isCreating {
+                        if viewModel.isCreating {
                             ProgressView()
                                 .progressViewStyle(.circular)
                                 .tint(Color("AppSurface"))
@@ -220,8 +186,8 @@ struct NewProjectView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
                 }
                 .buttonStyle(.plain)
-                .shadow(color: isFormValid ? Color("AppText").opacity(0.2) : Color.clear, radius: 8, y: 4)
-                .disabled(!isFormValid || isCreating)
+                .shadow(color: viewModel.isFormValid ? Color("AppText").opacity(0.2) : Color.clear, radius: 8, y: 4)
+                .disabled(!viewModel.isFormValid || viewModel.isCreating)
                 .padding(.horizontal)
                 .padding(.bottom, 20)
             }
@@ -233,54 +199,8 @@ struct NewProjectView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showDocumentPicker) {
-                DocumentPicker(selectedURL: $selectedPDFURL)
-            }
-        }
-    }
-    
-    private var isFormValid: Bool {
-        !projectName.trimmingCharacters(in: .whitespaces).isEmpty && selectedPDFURL != nil
-    }
-    
-    private func createProject() {
-        guard let sourceURL = selectedPDFURL else { return }
-        
-        isCreating = true
-        errorMessage = nil
-        
-        Task {
-            do {
-                let copiedURL = try await copyPDF(from: sourceURL)
-                let newProject = Project(
-                    name: projectName.trimmingCharacters(in: .whitespaces),
-                    pdfURL: copiedURL
-                )
-                
-                await MainActor.run {
-                    project = newProject
-                    isCreating = false
-                    dismiss()
-                }
-            } catch {
-                await MainActor.run {
-                    isCreating = false
-                    errorMessage = "Failed to create project: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-    
-    private func copyPDF(from sourceURL: URL) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    let fileName = sourceURL.lastPathComponent
-                    let copiedURL = try Project.copyPDFToDocuments(from: sourceURL, withName: fileName)
-                    continuation.resume(returning: copiedURL)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
+            .sheet(isPresented: $viewModel.showDocumentPicker) {
+                DocumentPicker(selectedURL: $viewModel.selectedPDFURL)
             }
         }
     }
@@ -289,3 +209,5 @@ struct NewProjectView: View {
 #Preview {
     NewProjectView(project: .constant(nil))
 }
+
+

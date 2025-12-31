@@ -113,19 +113,7 @@ struct CounterView: View {
                 }) {
                     Image(systemName: "minus.circle.fill")
                         .font(.title3)
-                        .foregroundStyle(
-                            counter.value > 0 ?
-                            LinearGradient(
-                                    colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ) :
-                            LinearGradient(
-                                colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .foregroundStyle(counter.value > 0 ? LinearGradient.accent : LinearGradient.disabled)
                 }
                 .buttonStyle(.plain)
                 .disabled(counter.value == 0)
@@ -150,13 +138,7 @@ struct CounterView: View {
                             .foregroundColor(Color("AppSurface"))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(
-                            LinearGradient(
-                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .background(LinearGradient.accent)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .shadow(color: Color("AppText").opacity(0.2), radius: 4, y: 2)
                     }
@@ -167,13 +149,7 @@ struct CounterView: View {
                     }) {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                            .accentGradient()
                     }
                     .buttonStyle(.plain)
                     .alignmentGuide(VerticalAlignment.center) { d in d[VerticalAlignment.center] }

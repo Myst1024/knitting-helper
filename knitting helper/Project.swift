@@ -104,7 +104,7 @@ extension Project {
         let fileManager = FileManager.default
         
         guard let projectsURL = projectsDirectory else {
-            throw NSError(domain: "ProjectError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not access documents directory"])
+            throw ProjectError.documentDirectoryUnavailable
         }
         
         // Create projects subdirectory if needed
@@ -144,14 +144,16 @@ extension Project {
     }
     
     /// Saves an array of projects to disk
-    static func saveProjects(_ projects: [Project]) {
-        guard let fileURL = projectsFileURL else { return }
+    static func saveProjects(_ projects: [Project]) throws {
+        guard let fileURL = projectsFileURL else {
+            throw ProjectError.documentDirectoryUnavailable
+        }
         
         do {
             let data = try JSONEncoder().encode(projects)
             try data.write(to: fileURL, options: .atomic)
         } catch {
-            print("Failed to save projects: \(error)")
+            throw ProjectError.saveFailed(error)
         }
     }
     
@@ -172,7 +174,7 @@ extension Project {
             // If any projects were invalid, save the cleaned list
             if validProjects.count != projects.count {
                 print("Removed \(projects.count - validProjects.count) invalid project(s) with missing PDF files")
-                saveProjects(validProjects)
+                try? saveProjects(validProjects)
             }
             
             return validProjects
@@ -187,6 +189,6 @@ extension Project {
         deletePDF()
         var projects = Project.loadProjects()
         projects.removeAll { $0.id == self.id }
-        Project.saveProjects(projects)
+        try? Project.saveProjects(projects)
     }
 }

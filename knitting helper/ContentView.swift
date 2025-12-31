@@ -19,33 +19,25 @@ private enum Constants {
 // MARK: - ContentView
 
 struct ContentView: View {
-    @State private var projects: [Project] = []
-    @State private var currentProject: Project?
-    @State private var showNewProjectView = false
-    @State private var shouldAddHighlight = false
-    @State private var projectToDelete: Project?
-    @State private var showDeleteConfirmation = false
-    @State private var projectToRename: Project?
-    @State private var showRenameDialog = false
-    @State private var newProjectName = ""
+    @StateObject private var viewModel = ProjectListViewModel()
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
-                if let project = currentProject {
+                if let project = viewModel.currentProject {
                     ZStack {
                         // PDF Viewer
                         PDFViewer(
                             url: project.pdfURL,
-                            shouldAddHighlight: $shouldAddHighlight,
+                            shouldAddHighlight: $viewModel.shouldAddHighlight,
                             highlights: Binding(
-                                get: { currentProject?.highlights ?? [] },
-                                set: { currentProject?.highlights = $0 }
+                                get: { viewModel.currentProject?.highlights ?? [] },
+                                set: { viewModel.updateCurrentProjectHighlights($0) }
                             ),
                             counterCount: project.counters.count,
                             scrollOffsetY: Binding(
-                                get: { currentProject?.scrollOffsetY ?? 0 },
-                                set: { currentProject?.scrollOffsetY = $0 }
+                                get: { viewModel.currentProject?.scrollOffsetY ?? 0 },
+                                set: { viewModel.updateCurrentProjectScrollOffset($0) }
                             )
                         )
                         .edgesIgnoringSafeArea(.bottom)
@@ -54,14 +46,14 @@ struct ContentView: View {
                             // Counters overlay (fixed at top)
                             CountersOverlay(
                                 counters: Binding(
-                                    get: { currentProject?.counters ?? [] },
-                                    set: { currentProject?.counters = $0 }
+                                    get: { viewModel.currentProject?.counters ?? [] },
+                                    set: { viewModel.updateCurrentProjectCounters($0) }
                                 ),
                                 onAddCounter: {
                                     var transaction = Transaction()
                                     transaction.disablesAnimations = true
                                     withTransaction(transaction) {
-                                        currentProject?.counters.append(Counter(name: "Counter \(project.counters.count + 1)"))
+                                        viewModel.addCounterToCurrentProject()
                                     }
                                 }
                             )
@@ -71,17 +63,11 @@ struct ContentView: View {
                             // Highlight button (bottom left)
                             HStack {
                                 Button {
-                                    shouldAddHighlight = true
+                                    viewModel.shouldAddHighlight = true
                                 } label: {
                                     Image(systemName: "highlighter")
                                         .font(.title2)
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
+                                        .accentGradient()
                                         .background(
                                             Circle()
                                                 .fill(Color("AppSurface"))
@@ -93,7 +79,7 @@ struct ContentView: View {
                                 .padding(.leading, 16)
                                 Spacer()
                             }
-                                .padding(.bottom, safeAreaBottomInset() + 16)
+                                .padding(.bottom, UIHelper.safeAreaBottomInset() + 16)
                         }
                         .zIndex(1)
                     }
@@ -104,223 +90,70 @@ struct ContentView: View {
                         removal: .move(edge: .trailing)
                     ))
                 } else {
-                    // Empty state - show projects list or welcome screen
-                    ZStack {
-                        ScrollView {
-                            VStack(spacing: 24) {
-                                ZStack {
-                                    Circle()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [Color("AccentColor").opacity(0.18), Color("AccentColor").opacity(0.08)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .frame(width: 100, height: 100)
-                                    
-                                    Image(systemName: "folder.badge.plus")
-                                        .font(.system(size: Constants.iconSize))
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                }
-                                .padding(.top, 40)
-                                
-                                VStack(spacing: 8) {
-                                    Text(projects.isEmpty ? "Welcome to Knitting Helper" : "Your Projects")
-                                        .font(.title2)
-                                        .fontWeight(.bold)
-                                    
-                                    if projects.isEmpty {
-                                        Text("Create a project to get started")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                
-                                // Show existing projects
-                                if !projects.isEmpty {
-                                    VStack(spacing: 12) {
-                                        ForEach(projects) { project in
-                                            ProjectCard(
-                                                project: project,
-                                                onOpen: { openProject(project) },
-                                                onRename: {
-                                                    projectToRename = project
-                                                    newProjectName = project.name
-                                                    showRenameDialog = true
-                                                },
-                                                onDelete: {
-                                                    projectToDelete = project
-                                                    showDeleteConfirmation = true
-                                                }
-                                            )
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                }
-                                
-                                // Add spacing for the floating button at the bottom
-                                Color.clear
-                                    .frame(height: 100)
-                            }
-                        }
-                        
-                        // Floating Start New Project button
-                        VStack {
-                            Spacer()
-                            
-                            Button {
-                                showNewProjectView = true
-                            } label: {
-                                Label("Start New Project", systemImage: "plus.circle.fill")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(Color("AppSurface"))
-                                    .padding(.horizontal, 28)
-                                    .padding(.vertical, 16)
-                                    .background(
-                                        LinearGradient(
-                                            colors: [Color("AccentColor"), Color("AccentColor").opacity(0.8)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
-                                    .shadow(color: Color("AppText").opacity(0.25), radius: 12, y: 6)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.bottom, 20)
-                        }
-                    }
+                    ProjectListView(
+                        projects: viewModel.projects,
+                        onOpenProject: { viewModel.openProject($0) },
+                        onRenameProject: { viewModel.prepareRename($0) },
+                        onDeleteProject: { viewModel.prepareDelete($0) },
+                        onCreateProject: { viewModel.showNewProjectView = true }
+                    )
                     .transition(.asymmetric(
                         insertion: .move(edge: .leading),
                         removal: .move(edge: .leading)
                     ))
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: currentProject?.id)
-            .navigationTitle(currentProject?.name ?? "Knitting Helper")
+            .animation(.easeInOut(duration: 0.3), value: viewModel.currentProject?.id)
+            .navigationTitle(viewModel.currentProject?.name ?? "Knitting Helper")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if currentProject != nil {
+                if viewModel.currentProject != nil {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button {
-                            closeProject()
+                            viewModel.closeProject()
                         } label: {
                             Image(systemName: "house.fill")
                         }
                     }
                 }
             }
-            .sheet(isPresented: $showNewProjectView) {
+            .sheet(isPresented: $viewModel.showNewProjectView) {
                 NewProjectView(project: Binding(
                     get: { nil },
                     set: { newProject in
                         if let newProject = newProject {
-                            addProject(newProject)
+                            viewModel.addProject(newProject)
                         }
                     }
                 ))
             }
-            .alert("Delete Project?", isPresented: $showDeleteConfirmation, presenting: projectToDelete) { project in
+            .alert("Delete Project?", isPresented: $viewModel.showDeleteConfirmation, presenting: viewModel.projectToDelete) { project in
                 Button("Cancel", role: .cancel) {
-                    projectToDelete = nil
+                    viewModel.clearDeleteState()
                 }
                 Button("Delete", role: .destructive) {
-                    deleteProject(project)
-                    projectToDelete = nil
+                    viewModel.deleteProject(project)
+                    viewModel.clearDeleteState()
                 }
             } message: { project in
                 Text("Are you sure you want to delete \"\(project.name)\"? This action cannot be undone.")
             }
-            .alert("Rename Project", isPresented: $showRenameDialog, presenting: projectToRename) { project in
-                TextField("Project Name", text: $newProjectName)
+            .alert("Rename Project", isPresented: $viewModel.showRenameDialog, presenting: viewModel.projectToRename) { project in
+                TextField("Project Name", text: $viewModel.newProjectName)
                 Button("Cancel", role: .cancel) {
-                    projectToRename = nil
-                    newProjectName = ""
+                    viewModel.clearRenameState()
                 }
                 Button("Rename") {
-                    renameProject(project, to: newProjectName)
-                    projectToRename = nil
-                    newProjectName = ""
+                    viewModel.renameProject(project, to: viewModel.newProjectName)
+                    viewModel.clearRenameState()
                 }
-                .disabled(newProjectName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(viewModel.newProjectName.trimmingCharacters(in: .whitespaces).isEmpty)
             } message: { project in
                 Text("Enter a new name for \"\(project.name)\"")
-            }
-            .onAppear {
-                loadProjects()
-            }
-        }
-        .navigationViewStyle(StackNavigationViewStyle())
-    }
-    
-    // MARK: - Project Management
-    
-    private func loadProjects() {
-        projects = Project.loadProjects()
-    }
-    
-    private func addProject(_ project: Project) {
-        projects.append(project)
-        Project.saveProjects(projects)
-        currentProject = project
-    }
-    
-    private func openProject(_ project: Project) {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            currentProject = project
-        }
-    }
-    
-    private func closeProject() {
-        if let current = currentProject {
-            // Save counters before closing
-            if let index = projects.firstIndex(where: { $0.id == current.id }) {
-                projects[index] = current
-                Project.saveProjects(projects)
-            }
-        }
-        withAnimation(.easeInOut(duration: 0.3)) {
-            currentProject = nil
-        }
-    }
-    
-    private func deleteProject(_ project: Project) {
-        projects.removeAll { $0.id == project.id }
-        project.delete()
-        if currentProject?.id == project.id {
-            currentProject = nil
-        }
-    }
-    
-    private func renameProject(_ project: Project, to newName: String) {
-        let trimmedName = newName.trimmingCharacters(in: .whitespaces)
-        guard !trimmedName.isEmpty else { return }
-        
-        if let index = projects.firstIndex(where: { $0.id == project.id }) {
-            projects[index].name = trimmedName
-            Project.saveProjects(projects)
-            
-            if currentProject?.id == project.id {
-                currentProject?.name = trimmedName
             }
         }
     }
 }
-        // Helper to get the bottom safe area inset
-        private func safeAreaBottomInset() -> CGFloat {
-            guard let window = UIApplication.shared.connectedScenes
-                .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
-                .first else { return 0 }
-            return window.safeAreaInsets.bottom
-        }
 
 // MARK: - Supporting Views
 
@@ -336,24 +169,12 @@ struct ProjectCard: View {
                 HStack(spacing: 16) {
                     ZStack {
                         Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color("AccentColor").opacity(0.18), Color("AccentColor").opacity(0.08)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
+                            .accentGradientFill()
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: "folder.fill")
                             .font(.title3)
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
+                            .accentGradient()
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
@@ -405,17 +226,6 @@ struct ProjectCard: View {
     }
 }
 
-// MARK: - View Extensions
-
-extension View {
-    func dismissKeyboardOnTap() -> some View {
-        simultaneousGesture(
-            TapGesture().onEnded {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            }
-        )
-    }
-}
 
 // MARK: - Preview
 
