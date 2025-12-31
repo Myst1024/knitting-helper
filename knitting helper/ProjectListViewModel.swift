@@ -20,6 +20,8 @@ class ProjectListViewModel: ObservableObject {
     @Published var projectToRename: Project?
     @Published var showRenameDialog = false
     @Published var newProjectName = ""
+    @Published var showTimer = false
+    @Published var timerViewModel: TimerViewModel?
     
     init() {
         loadProjects()
@@ -43,14 +45,23 @@ class ProjectListViewModel: ObservableObject {
     }
     
     func openProject(_ project: Project) {
+        // Stop timer if one is running
+        stopTimerIfNeeded()
+        
         withAnimation(.easeInOut(duration: 0.3)) {
             currentProject = project
         }
+        
+        // Initialize timer for the new project
+        initializeTimer(for: project)
     }
     
     func closeProject() {
+        // Stop timer when leaving project view
+        stopTimerIfNeeded()
+        
         if let current = currentProject {
-            // Save counters before closing
+            // Save counters and timer before closing
             if let index = projects.firstIndex(where: { $0.id == current.id }) {
                 projects[index] = current
                 do {
@@ -61,8 +72,13 @@ class ProjectListViewModel: ObservableObject {
                 }
             }
         }
+        
+        // Clear timer
+        timerViewModel = nil
+        
         withAnimation(.easeInOut(duration: 0.3)) {
             currentProject = nil
+            showTimer = false
         }
     }
     
@@ -154,6 +170,55 @@ class ProjectListViewModel: ObservableObject {
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+        }
+    }
+    
+    // MARK: - Timer Management
+    
+    func toggleTimer() {
+        showTimer.toggle()
+    }
+    
+    func initializeTimer(for project: Project) {
+        let viewModel = TimerViewModel(
+            elapsedSeconds: project.timerElapsedSeconds,
+            isRunning: project.timerIsRunning,
+            lastStartTime: project.timerLastStartTime
+        )
+        
+        viewModel.setSaveCallback { [weak self] in
+            self?.saveTimerState()
+        }
+        
+        timerViewModel = viewModel
+    }
+    
+    private func stopTimerIfNeeded() {
+        timerViewModel?.stop()
+        saveTimerState()
+    }
+    
+    private func saveTimerState() {
+        guard let timerVM = timerViewModel,
+              var current = currentProject else { return }
+        
+        let state = timerVM.timerState
+        current.timerElapsedSeconds = state.elapsedSeconds
+        current.timerIsRunning = state.isRunning
+        current.timerLastStartTime = state.lastStartTime
+        
+        currentProject = current
+        
+        // Also update in projects array
+        if let index = projects.firstIndex(where: { $0.id == current.id }) {
+            projects[index] = current
+        }
+        
+        // Save to disk
+        do {
+            try Project.saveProjects(projects)
+        } catch {
+            print("Failed to save timer state: \(error)")
         }
     }
 }

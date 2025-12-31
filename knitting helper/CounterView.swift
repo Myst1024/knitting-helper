@@ -111,17 +111,27 @@ struct CounterView: View {
                         counter.value -= 1
                     }
                 }) {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(counter.value > 0 ? LinearGradient.accent : LinearGradient.disabled)
+                    ZStack {
+                        Circle()
+                            .fill(counter.value > 0 ? LinearGradient.accent : LinearGradient.disabled)
+                            .frame(width: 32, height: 32)
+                        
+                        Image(systemName: "minus")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
                 }
                 .buttonStyle(.plain)
                 .disabled(counter.value == 0)
                 .alignmentGuide(VerticalAlignment.center) { d in d[VerticalAlignment.center] }
                 
-                    Text("\(counter.value)")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundColor(isAtMax ? Color("AccentColor") : Color("AppText"))
+                Text("\(counter.value)")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(isAtMax ? LinearGradient.accent : LinearGradient(
+                        colors: [Color("AppText"), Color("AppText").opacity(0.8)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
                 
                 // Repeat button (when at max) or Increment button
                 if isAtMax {
@@ -129,27 +139,45 @@ struct CounterView: View {
                         counter.value = 0
                         counter.reps += 1
                     }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.counterclockwise.circle.fill")
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 12, weight: .semibold))
                             Text("Repeat")
                                 .fontWeight(.semibold)
                         }
                         .font(.caption)
-                            .foregroundColor(Color("AppSurface"))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(LinearGradient.accent)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            ZStack {
+                                LinearGradient.accent
+                                
+                                // Inner highlight
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.2), Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .center
+                                )
+                            }
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .shadow(color: Color("AppText").opacity(0.2), radius: 4, y: 2)
+                        .enhancedShadow(color: Color("AccentColor"), radius: 6, y: 3)
                     }
                     .buttonStyle(.plain)
                 } else {
                     Button(action: {
                         counter.value += 1
                     }) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .accentGradient()
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient.accent)
+                                .frame(width: 32, height: 32)
+                            
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
                     }
                     .buttonStyle(.plain)
                     .alignmentGuide(VerticalAlignment.center) { d in d[VerticalAlignment.center] }
@@ -158,39 +186,74 @@ struct CounterView: View {
                 if counter.max != nil {
                     Divider()
                         .frame(height: 24)
+                        .background(Color("AppSeparator"))
                     
-                    VStack(spacing: 0) {
+                    VStack(spacing: 2) {
                         Text("Reps")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                         Text("\(counter.reps)")
-                            .font(.system(size: 18, weight: .semibold, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundStyle(LinearGradient.accentTertiary)
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(LinearGradient.accentTertiaryLight)
+                    )
                 }
                 
                 // Reset button
                 Button(action: {
                     counter.value = 0
                 }) {
-                    Image(systemName: "gobackward")
-                        .font(.body)
-                        .foregroundColor(Color("AccentColor").opacity(0.9))
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient.accentWarm.opacity(counter.value > 0 ? 0.15 : 0.05))
+                            .frame(width: 28, height: 28)
+                        
+                        Image(systemName: "gobackward")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(counter.value > 0 ? LinearGradient.accentWarm : LinearGradient.disabled)
+                    }
                 }
                 .buttonStyle(.plain)
-                .opacity(counter.value > 0 ? 1 : 0.3)
+                .opacity(counter.value > 0 ? 1 : 0.4)
                 .disabled(counter.value == 0)
             }
         }
         .padding(Constants.counterPadding)
         .background(
-            RoundedCornerShape(radius: Constants.cornerRadius, corners: cornersToRound())
-                .fill(Color("AppSurface"))
-                .shadow(color: position == .single ? Color("AppText").opacity(0.06) : .clear, radius: 8, x: 0, y: 2)
+            ZStack {
+                // Base surface
+                RoundedCornerShape(radius: Constants.cornerRadius, corners: cornersToRound())
+                    .fill(Color("AppSurface"))
+                
+                // Subtle gradient overlay
+                RoundedCornerShape(radius: Constants.cornerRadius, corners: cornersToRound())
+                    .fill(LinearGradient.accentLight.opacity(0.4))
+            }
+            .shadow(
+                color: position == .single ? Color("AppText").opacity(0.08) : .clear,
+                radius: position == .single ? 10 : 0,
+                x: 0,
+                y: position == .single ? 4 : 0
+            )
         )
         .overlay(
             RoundedCornerShape(radius: Constants.cornerRadius, corners: cornersToRound())
-                .stroke(Color("AppSeparator"), lineWidth: 0.5)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color("AppSeparator"),
+                            Color("AppSeparator").opacity(0.6)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.5
+                )
         )
         .onChange(of: isMaxFieldFocused) { _, isFocused in
             if !isFocused && isEditingMax {
@@ -252,11 +315,14 @@ struct MaxValueEditor: View {
             if let maxValue = max {
                 Text("max: \(maxValue)")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                        .background(Color("AccentColor").opacity(0.08))
-                    .cornerRadius(6)
+                    .fontWeight(.medium)
+                    .foregroundStyle(LinearGradient.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(LinearGradient.accentLight)
+                    )
                     .onTapGesture {
                         isEditing = true
                         isFocused = true
@@ -269,7 +335,14 @@ struct MaxValueEditor: View {
                 } label: {
                     Text("+ max")
                         .font(.caption2)
-                        .foregroundColor(Color("AccentColor"))
+                        .fontWeight(.medium)
+                        .foregroundStyle(LinearGradient.accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(LinearGradient.accent, lineWidth: 1)
+                        )
                 }
             }
         }
@@ -322,22 +395,36 @@ struct CountersOverlay: View {
                 Spacer()
                 
                 Button(action: onAddCounter) {
-                    Image(systemName: "plus")
-                        .font(.title2)
-                        .foregroundStyle(Color("AccentColor"))
-                        .padding(6)
-                        .background(
-                            ZStack {
-                                Circle()
-                                    .fill(Color("AppSurface"))
-                                    .frame(width: 28, height: 28)
-                                Circle()
-                                    .stroke(Color("AccentColor"), lineWidth: 1)
-                                    .frame(width: 28, height: 28)
-                            }
-                        )
+                    ZStack {
+                        // Outer glow
+                        Circle()
+                            .fill(LinearGradient.accentLight)
+                            .frame(width: 36, height: 36)
+                            .blur(radius: 4)
+                        
+                        // Main circle
+                        Circle()
+                            .fill(LinearGradient.accent)
+                            .frame(width: 32, height: 32)
+                        
+                        // Inner highlight
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.25), Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .center
+                                )
+                            )
+                            .frame(width: 32, height: 32)
+                        
+                        Image(systemName: "plus")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
                 }
                 .buttonStyle(.plain)
+                .enhancedShadow(color: Color("AccentColor"), radius: 8, y: 4)
                 .padding(.trailing, 16)
             }
             .padding(.top, counters.isEmpty ? 12 : 8)

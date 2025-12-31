@@ -60,7 +60,6 @@ class PDFCanvasView: UIView {
             } else {
                 let iv = UIImageView(frame: frame)
                 iv.backgroundColor = .white
-                iv.backgroundColor = UIColor(named: "AppSurface") ?? .white
                 // Rendered images are rasterized to exact view size; use scaleToFill so they map 1:1.
                 iv.contentMode = .scaleToFill
                 iv.clipsToBounds = true
@@ -112,7 +111,6 @@ class PDFCanvasView: UIView {
                 let img = renderer.image { ctx in
                     let c = ctx.cgContext
                     UIColor.white.setFill()
-                    (UIColor(named: "AppSurface") ?? UIColor.white).setFill()
                     c.fill(CGRect(origin: .zero, size: targetSize))
                     // Map PDF page to renderer coordinate space
                     let media = page.bounds(for: .mediaBox)

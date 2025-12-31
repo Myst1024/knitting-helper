@@ -41,8 +41,22 @@ struct ContentView: View {
                             )
                         )
                         .edgesIgnoringSafeArea(.bottom)
+                        .onAppear {
+                            // Initialize timer when project view appears
+                            if viewModel.timerViewModel == nil {
+                                viewModel.initializeTimer(for: project)
+                            }
+                        }
                         
                         VStack {
+                            // Timer overlay (if visible) - above counters
+                            if viewModel.showTimer, let timerVM = viewModel.timerViewModel {
+                                TimerView(timerViewModel: timerVM)
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+                            
                             // Counters overlay (fixed at top)
                             CountersOverlay(
                                 counters: Binding(
@@ -65,21 +79,40 @@ struct ContentView: View {
                                 Button {
                                     viewModel.shouldAddHighlight = true
                                 } label: {
-                                    Image(systemName: "highlighter")
-                                        .font(.title2)
-                                        .accentGradient()
-                                        .background(
-                                            Circle()
-                                                .fill(Color("AppSurface"))
-                                                .frame(width: 36, height: 36)
-                                        )
-                                        .shadow(color: Color("AppText").opacity(0.15), radius: 4, y: 2)
+                                    ZStack {
+                                        // Outer glow
+                                        Circle()
+                                            .fill(LinearGradient.accentWarmLight)
+                                            .frame(width: 48, height: 48)
+                                            .blur(radius: 6)
+                                        
+                                        // Main circle
+                                        Circle()
+                                            .fill(LinearGradient.accentWarm)
+                                            .frame(width: 44, height: 44)
+                                        
+                                        // Inner highlight
+                                        Circle()
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: [Color.white.opacity(0.3), Color.clear],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .center
+                                                )
+                                            )
+                                            .frame(width: 44, height: 44)
+                                        
+                                        Image(systemName: "highlighter")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundColor(.white)
+                                    }
                                 }
                                 .buttonStyle(.plain)
+                                .enhancedShadow(color: Color("AccentWarm"), radius: 12, y: 6)
                                 .padding(.leading, 16)
                                 Spacer()
                             }
-                                .padding(.bottom, UIHelper.safeAreaBottomInset() + 16)
+                            .padding(.bottom, UIHelper.safeAreaBottomInset() + 16)
                         }
                         .zIndex(1)
                     }
@@ -90,13 +123,19 @@ struct ContentView: View {
                         removal: .move(edge: .trailing)
                     ))
                 } else {
-                    ProjectListView(
-                        projects: viewModel.projects,
-                        onOpenProject: { viewModel.openProject($0) },
-                        onRenameProject: { viewModel.prepareRename($0) },
-                        onDeleteProject: { viewModel.prepareDelete($0) },
-                        onCreateProject: { viewModel.showNewProjectView = true }
-                    )
+                    ZStack {
+                        // Subtle background gradient
+                        LinearGradient.backgroundSubtle
+                            .ignoresSafeArea()
+                        
+                        ProjectListView(
+                            projects: viewModel.projects,
+                            onOpenProject: { viewModel.openProject($0) },
+                            onRenameProject: { viewModel.prepareRename($0) },
+                            onDeleteProject: { viewModel.prepareDelete($0) },
+                            onCreateProject: { viewModel.showNewProjectView = true }
+                        )
+                    }
                     .transition(.asymmetric(
                         insertion: .move(edge: .leading),
                         removal: .move(edge: .leading)
@@ -113,7 +152,16 @@ struct ContentView: View {
                             viewModel.closeProject()
                         } label: {
                             Image(systemName: "house.fill")
+                                .foregroundStyle(LinearGradient.accent)
                         }
+                    }
+                    
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        TimerToolbarButton(
+                            showTimer: viewModel.showTimer,
+                            timerViewModel: viewModel.timerViewModel,
+                            onToggle: { viewModel.toggleTimer() }
+                        )
                     }
                 }
             }
@@ -157,24 +205,117 @@ struct ContentView: View {
 
 // MARK: - Supporting Views
 
+struct TimerToolbarButton: View {
+    let showTimer: Bool
+    let timerViewModel: TimerViewModel?
+    let onToggle: () -> Void
+    
+    private var iconName: String {
+        if let timerVM = timerViewModel, timerVM.isRunning {
+            return "stopwatch.fill"
+        } else if showTimer {
+            return "stopwatch.fill"
+        } else {
+            return "stopwatch"
+        }
+    }
+    
+    private var isRunning: Bool {
+        timerViewModel?.isRunning ?? false
+    }
+    
+    var body: some View {
+        Button(action: onToggle) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: iconName)
+                    .foregroundStyle(
+                        isRunning ?
+                            LinearGradient.accent :
+                            LinearGradient(
+                                colors: [
+                                    Color("AccentColor").opacity(0.6),
+                                    Color("AccentColor").opacity(0.45)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                    )
+                
+                // Static indicator dot when running
+                if isRunning {
+                    Circle()
+                        .fill(Color("AccentColor"))
+                        .frame(width: 6, height: 6)
+                        .offset(x: 4, y: -4)
+                }
+            }
+        }
+    }
+}
+
 struct ProjectCard: View {
     let project: Project
+    let colorIndex: Int
     let onOpen: () -> Void
     let onRename: () -> Void
     let onDelete: () -> Void
+    
+    private var cardGradient: LinearGradient {
+        switch colorIndex % 4 {
+        case 0:
+            return LinearGradient.accentLight
+        case 1:
+            return LinearGradient.accentSecondaryLight
+        case 2:
+            return LinearGradient.accentTertiaryLight
+        default:
+            return LinearGradient.accentWarmLight
+        }
+    }
+    
+    private var iconGradient: LinearGradient {
+        switch colorIndex % 4 {
+        case 0:
+            return LinearGradient.accent
+        case 1:
+            return LinearGradient.accentSecondary
+        case 2:
+            return LinearGradient.accentTertiary
+        default:
+            return LinearGradient.accentWarm
+        }
+    }
     
     var body: some View {
         HStack(spacing: 0) {
             Button(action: onOpen) {
                 HStack(spacing: 16) {
                     ZStack {
+                        // Outer glow
                         Circle()
-                            .accentGradientFill()
+                            .fill(cardGradient)
+                            .frame(width: 56, height: 56)
+                            .blur(radius: 4)
+                        
+                        // Main circle
+                        Circle()
+                            .fill(iconGradient)
+                            .frame(width: 50, height: 50)
+                        
+                        // Inner highlight
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.25), Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .center
+                                )
+                            )
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: "folder.fill")
                             .font(.title3)
-                            .accentGradient()
+                            .foregroundColor(.white)
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
@@ -214,15 +355,33 @@ struct ProjectCard: View {
                     .padding(.trailing, 16)
             }
         }
-                                .background(
-                                    RoundedRectangle(cornerRadius: Constants.cornerRadius)
-                                        .fill(Color("AppSurface"))
-                                        .shadow(color: Color("AppText").opacity(0.06), radius: 8, y: 2)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: Constants.cornerRadius)
-                                        .stroke(Color("AppSeparator"), lineWidth: 0.5)
-                                )
+        .background(
+            ZStack {
+                // Base surface
+                RoundedRectangle(cornerRadius: Constants.cornerRadius)
+                    .fill(Color("AppSurface"))
+                
+                // Subtle gradient overlay
+                RoundedRectangle(cornerRadius: Constants.cornerRadius)
+                    .fill(cardGradient)
+                    .opacity(0.6)
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Constants.cornerRadius)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color("AppSeparator"),
+                            Color("AppSeparator").opacity(0.5)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.5
+                )
+        )
+        .enhancedShadow(radius: 10, y: 4)
     }
 }
 

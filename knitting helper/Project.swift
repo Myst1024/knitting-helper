@@ -46,14 +46,20 @@ struct Project: Identifiable, Codable {
     var counters: [Counter] = []
     var highlights: [CodableHighlight] = []
     var scrollOffsetY: Double = 0
+    var timerElapsedSeconds: Double = 0
+    var timerIsRunning: Bool = false
+    var timerLastStartTime: Date?
     
-    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], scrollOffsetY: Double = 0) {
+    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerIsRunning: Bool = false, timerLastStartTime: Date? = nil) {
         self.id = id
         self.name = name
         self.pdfURL = pdfURL
         self.counters = counters
         self.highlights = highlights
         self.scrollOffsetY = scrollOffsetY
+        self.timerElapsedSeconds = timerElapsedSeconds
+        self.timerIsRunning = timerIsRunning
+        self.timerLastStartTime = timerLastStartTime
     }
     
     /// Checks if the project's PDF file still exists

@@ -106,7 +106,7 @@ class HighlightOverlayView: UIView {
                 db.frame = deleteFrame
             } else {
                 let db = UIView(frame: deleteFrame)
-                db.backgroundColor = UIColor(named: "AppSurface") ?? .white
+                db.backgroundColor = .white
                 db.layer.cornerRadius = deleteSize / 2
                 db.layer.shadowColor = (UIColor(named: "AppText") ?? UIColor.black).withAlphaComponent(0.4).cgColor
                 db.layer.shadowOffset = CGSize(width: 0, height: 4)
@@ -156,7 +156,7 @@ class HighlightOverlayView: UIView {
                 cb.isUserInteractionEnabled = false
 
                 let iconConfig = UIImage.SymbolConfiguration(pointSize: colorSize / 2, weight: .medium)
-                if let palette = UIImage(systemName: "paintpalette.fill", withConfiguration: iconConfig)?.withTintColor(UIColor(named: "AppSurface") ?? .white, renderingMode: .alwaysOriginal) {
+                if let palette = UIImage(systemName: "paintpalette.fill", withConfiguration: iconConfig)?.withTintColor(.white, renderingMode: .alwaysOriginal) {
                     let iv = UIImageView(image: palette)
                     iv.translatesAutoresizingMaskIntoConstraints = false
                     iv.contentMode = .scaleAspectFit
@@ -240,8 +240,8 @@ class HighlightSubview: UIView {
         ])
 
         // Handles are white filled with a subtle colored stroke when selected.
-        topHandle.backgroundColor = UIColor(named: "AppSurface") ?? .white
-        bottomHandle.backgroundColor = UIColor(named: "AppSurface") ?? .white
+        topHandle.backgroundColor = .white
+        bottomHandle.backgroundColor = .white
         topHandle.layer.cornerRadius = PDFConstants.handleCornerRadius
         bottomHandle.layer.cornerRadius = PDFConstants.handleCornerRadius
         topHandle.translatesAutoresizingMaskIntoConstraints = false
