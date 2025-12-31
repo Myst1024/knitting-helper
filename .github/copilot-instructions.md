@@ -1,7 +1,8 @@
 # Knitting Helper - Copilot Instructions
 
 # Project (no workspace)
-xcodebuild -project "knitting helper.xcodeproj" -scheme "knitting helper" -configuration Debug -sdk iphonesimulator clean build | tee xcodebuild.log
+## running a build:
+- xcodebuild -project "knitting helper.xcodeproj" -scheme "knitting helper" -configuration Debug -sdk iphonesimulator clean build | tee xcodebuild.log
 
 Notes:
 - ALWAYS run a build and confirm no errors are present before declaring that code is ready.

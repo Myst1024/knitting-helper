@@ -80,7 +80,7 @@ struct CounterView: View {
                     Text(counter.name)
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                        .foregroundColor(.primary)
+                        .foregroundColor(Color("AppText"))
                         .onTapGesture {
                             isEditingName = true
                             isNameFieldFocused = true
@@ -116,10 +116,10 @@ struct CounterView: View {
                         .foregroundStyle(
                             counter.value > 0 ?
                             LinearGradient(
-                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ) :
+                                    colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ) :
                             LinearGradient(
                                 colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.2)],
                                 startPoint: .topLeading,
@@ -131,9 +131,9 @@ struct CounterView: View {
                 .disabled(counter.value == 0)
                 .alignmentGuide(VerticalAlignment.center) { d in d[VerticalAlignment.center] }
                 
-                Text("\(counter.value)")
+                    Text("\(counter.value)")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .foregroundColor(isAtMax ? .cyan : .primary)
+                    .foregroundColor(isAtMax ? Color("AccentColor") : Color("AppText"))
                 
                 // Repeat button (when at max) or Increment button
                 if isAtMax {
@@ -147,18 +147,18 @@ struct CounterView: View {
                                 .fontWeight(.semibold)
                         }
                         .font(.caption)
-                        .foregroundColor(.white)
+                            .foregroundColor(Color("AppSurface"))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(
                             LinearGradient(
-                                colors: [Color.cyan, Color.cyan.opacity(0.8)],
+                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.8)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                        .shadow(color: Color("AppText").opacity(0.2), radius: 4, y: 2)
                     }
                     .buttonStyle(.plain)
                 } else {
@@ -169,7 +169,7 @@ struct CounterView: View {
                             .font(.title3)
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                    colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -199,7 +199,7 @@ struct CounterView: View {
                 }) {
                     Image(systemName: "gobackward")
                         .font(.body)
-                        .foregroundColor(.orange)
+                        .foregroundColor(Color("AccentColor").opacity(0.9))
                 }
                 .buttonStyle(.plain)
                 .opacity(counter.value > 0 ? 1 : 0.3)
@@ -209,12 +209,12 @@ struct CounterView: View {
         .padding(Constants.counterPadding)
         .background(
             RoundedCornerShape(radius: Constants.cornerRadius, corners: cornersToRound())
-                .fill(Color(.systemBackground))
-                .shadow(color: position == .single ? .black.opacity(0.06) : .clear, radius: 8, x: 0, y: 2)
+                .fill(Color("AppSurface"))
+                .shadow(color: position == .single ? Color("AppText").opacity(0.06) : .clear, radius: 8, x: 0, y: 2)
         )
         .overlay(
             RoundedCornerShape(radius: Constants.cornerRadius, corners: cornersToRound())
-                .stroke(Color(.systemGray5), lineWidth: 0.5)
+                .stroke(Color("AppSeparator"), lineWidth: 0.5)
         )
         .onChange(of: isMaxFieldFocused) { _, isFocused in
             if !isFocused && isEditingMax {
@@ -270,7 +270,7 @@ struct MaxValueEditor: View {
                     isFocused = false
                 }
                 .font(.caption2)
-                .foregroundColor(.cyan)
+                    .foregroundColor(Color("AccentColor"))
             }
         } else {
             if let maxValue = max {
@@ -279,7 +279,7 @@ struct MaxValueEditor: View {
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(Color.cyan.opacity(0.1))
+                        .background(Color("AccentColor").opacity(0.08))
                     .cornerRadius(6)
                     .onTapGesture {
                         isEditing = true
@@ -293,7 +293,7 @@ struct MaxValueEditor: View {
                 } label: {
                     Text("+ max")
                         .font(.caption2)
-                        .foregroundColor(.cyan)
+                        .foregroundColor(Color("AccentColor"))
                 }
             }
         }
@@ -346,21 +346,20 @@ struct CountersOverlay: View {
                 Spacer()
                 
                 Button(action: onAddCounter) {
-                    Image(systemName: "plus.circle.fill")
+                    Image(systemName: "plus")
                         .font(.title2)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .foregroundStyle(Color("AccentColor"))
+                        .padding(6)
                         .background(
-                            Circle()
-                                .fill(Color(.systemBackground))
-                                .frame(width: 36, height: 36)
+                            ZStack {
+                                Circle()
+                                    .fill(Color("AppSurface"))
+                                    .frame(width: 28, height: 28)
+                                Circle()
+                                    .stroke(Color("AccentColor"), lineWidth: 1)
+                                    .frame(width: 28, height: 28)
+                            }
                         )
-                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 16)

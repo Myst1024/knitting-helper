@@ -60,7 +60,7 @@ struct PDFKitView: UIViewRepresentable {
         scrollView.maximumZoomScale = 4.0
         scrollView.bouncesZoom = true
         scrollView.delegate = context.coordinator
-        scrollView.backgroundColor = .systemBackground
+        scrollView.backgroundColor = UIColor(named: "AppBackground") ?? .systemBackground
         
         // Add top content inset for counters overlay - dynamic based on counter count
         let counterHeight: CGFloat = 60 // Approximate height per counter
@@ -242,6 +242,7 @@ struct PDFKitView: UIViewRepresentable {
                 } else {
                     let iv = UIImageView(frame: frame)
                     iv.backgroundColor = .white
+                    iv.backgroundColor = UIColor(named: "AppSurface") ?? .white
                     // Rendered images are rasterized to exact view size; use scaleToFill so they map 1:1.
                     iv.contentMode = .scaleToFill
                     iv.clipsToBounds = true
@@ -293,6 +294,7 @@ struct PDFKitView: UIViewRepresentable {
                     let img = renderer.image { ctx in
                         let c = ctx.cgContext
                         UIColor.white.setFill()
+                        (UIColor(named: "AppSurface") ?? UIColor.white).setFill()
                         c.fill(CGRect(origin: .zero, size: targetSize))
                         // Map PDF page to renderer coordinate space
                         let media = page.bounds(for: .mediaBox)
@@ -414,11 +416,11 @@ struct PDFKitView: UIViewRepresentable {
             ctx.setShadow(
                 offset: CGSize(width: 0, height: 1),
                 blur: 2,
-                color: UIColor.black.withAlphaComponent(0.3).cgColor
+                color: (UIColor(named: "AppText") ?? UIColor.black).withAlphaComponent(0.3).cgColor
             )
             
             let path = UIBezierPath(roundedRect: handleRect, cornerRadius: Constants.handleCornerRadius)
-            UIColor.white.setFill()
+            (UIColor(named: "AppSurface") ?? UIColor.white).setFill()
             path.fill()
             color.setStroke()
             path.lineWidth = Constants.handleStrokeWidth
@@ -439,11 +441,11 @@ struct PDFKitView: UIViewRepresentable {
             ctx.setShadow(
                 offset: CGSize(width: 0, height: 4),
                 blur: 8,
-                color: UIColor.black.withAlphaComponent(0.4).cgColor
+                color: (UIColor(named: "AppText") ?? UIColor.black).withAlphaComponent(0.4).cgColor
             )
             
             let path = UIBezierPath(ovalIn: buttonRect)
-            UIColor.white.setFill()
+            (UIColor(named: "AppSurface") ?? UIColor.white).setFill()
             path.fill()
             ctx.restoreGState()
             
@@ -476,7 +478,7 @@ struct PDFKitView: UIViewRepresentable {
             ctx.setShadow(
                 offset: CGSize(width: 0, height: 4),
                 blur: 8,
-                color: UIColor.black.withAlphaComponent(0.4).cgColor
+                color: (UIColor(named: "AppText") ?? UIColor.black).withAlphaComponent(0.4).cgColor
             )
             
             // Draw background circle with highlight color
@@ -488,7 +490,7 @@ struct PDFKitView: UIViewRepresentable {
             // Draw white palette icon
             let iconConfig = UIImage.SymbolConfiguration(pointSize: size / 2, weight: .medium)
             if let paletteIcon = UIImage(systemName: "paintpalette.fill", withConfiguration: iconConfig) {
-                let whiteIcon = paletteIcon.withTintColor(.white, renderingMode: .alwaysOriginal)
+                let whiteIcon = paletteIcon.withTintColor(UIColor(named: "AppSurface") ?? .white, renderingMode: .alwaysOriginal)
                 let iconSize = whiteIcon.size
                 let iconRect = CGRect(
                     x: buttonRect.midX - iconSize.width / 2,
@@ -563,8 +565,11 @@ struct PDFKitView: UIViewRepresentable {
                 } else {
                     let db = UIView(frame: deleteFrame)
                     db.backgroundColor = .white
+                    db.backgroundColor = UIColor(named: "AppSurface") ?? .white
+                    db.backgroundColor = UIColor(named: "AppSurface") ?? .white
                     db.layer.cornerRadius = deleteSize / 2
                     db.layer.shadowColor = UIColor.black.withAlphaComponent(0.4).cgColor
+                    db.layer.shadowColor = (UIColor(named: "AppText") ?? UIColor.black).withAlphaComponent(0.4).cgColor
                     db.layer.shadowOffset = CGSize(width: 0, height: 4)
                     db.layer.shadowRadius = 8
                     db.layer.shadowOpacity = 1.0
@@ -606,13 +611,14 @@ struct PDFKitView: UIViewRepresentable {
                     cb.backgroundColor = model.color
                     cb.layer.cornerRadius = colorSize / 2
                     cb.layer.shadowColor = UIColor.black.withAlphaComponent(0.4).cgColor
+                    cb.layer.shadowColor = (UIColor(named: "AppText") ?? UIColor.black).withAlphaComponent(0.4).cgColor
                     cb.layer.shadowOffset = CGSize(width: 0, height: 4)
                     cb.layer.shadowRadius = 8
                     cb.layer.shadowOpacity = 1.0
                     cb.isUserInteractionEnabled = false
 
                     let iconConfig = UIImage.SymbolConfiguration(pointSize: colorSize / 2, weight: .medium)
-                    if let palette = UIImage(systemName: "paintpalette.fill", withConfiguration: iconConfig)?.withTintColor(.white, renderingMode: .alwaysOriginal) {
+                    if let palette = UIImage(systemName: "paintpalette.fill", withConfiguration: iconConfig)?.withTintColor(UIColor(named: "AppSurface") ?? .white, renderingMode: .alwaysOriginal) {
                         let iv = UIImageView(image: palette)
                         iv.translatesAutoresizingMaskIntoConstraints = false
                         iv.contentMode = .scaleAspectFit
@@ -695,8 +701,8 @@ struct PDFKitView: UIViewRepresentable {
             ])
 
             // Handles are white filled with a subtle colored stroke when selected.
-            topHandle.backgroundColor = .white
-            bottomHandle.backgroundColor = .white
+            topHandle.backgroundColor = UIColor(named: "AppSurface") ?? .white
+            bottomHandle.backgroundColor = UIColor(named: "AppSurface") ?? .white
             topHandle.layer.cornerRadius = Constants.handleCornerRadius
             bottomHandle.layer.cornerRadius = Constants.handleCornerRadius
             topHandle.translatesAutoresizingMaskIntoConstraints = false
@@ -1109,7 +1115,7 @@ class ColorPickerView: UIView {
     }
     
     private func setupView() {
-        backgroundColor = .white
+        backgroundColor = UIColor(named: "AppSurface") ?? .white
         layer.cornerRadius = 12
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOffset = CGSize(width: 0, height: 8)
@@ -1142,7 +1148,7 @@ class ColorPickerView: UIView {
         button.backgroundColor = color
         button.layer.cornerRadius = 20
         button.layer.borderWidth = 3
-        button.layer.borderColor = UIColor.white.cgColor
+        button.layer.borderColor = (UIColor(named: "AppSurface") ?? UIColor.white).cgColor
         
         // Add shadow for depth
         button.layer.shadowColor = UIColor.black.cgColor

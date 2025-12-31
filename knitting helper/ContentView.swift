@@ -77,17 +77,17 @@ struct ContentView: View {
                                         .font(.title2)
                                         .foregroundStyle(
                                             LinearGradient(
-                                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             )
                                         )
                                         .background(
                                             Circle()
-                                                .fill(Color(.systemBackground))
+                                                .fill(Color("AppSurface"))
                                                 .frame(width: 36, height: 36)
                                         )
-                                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                                        .shadow(color: Color("AppText").opacity(0.15), radius: 4, y: 2)
                                 }
                                 .buttonStyle(.plain)
                                 .padding(.leading, 16)
@@ -112,7 +112,7 @@ struct ContentView: View {
                                     Circle()
                                         .fill(
                                             LinearGradient(
-                                                colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
+                                                colors: [Color("AccentColor").opacity(0.18), Color("AccentColor").opacity(0.08)],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             )
@@ -123,7 +123,7 @@ struct ContentView: View {
                                         .font(.system(size: Constants.iconSize))
                                         .foregroundStyle(
                                             LinearGradient(
-                                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             )
@@ -181,18 +181,18 @@ struct ContentView: View {
                                 Label("Start New Project", systemImage: "plus.circle.fill")
                                     .font(.headline)
                                     .fontWeight(.semibold)
-                                    .foregroundColor(.white)
+                                    .foregroundColor(Color("AppSurface"))
                                     .padding(.horizontal, 28)
                                     .padding(.vertical, 16)
                                     .background(
                                         LinearGradient(
-                                            colors: [Color.cyan, Color.cyan.opacity(0.8)],
+                                            colors: [Color("AccentColor"), Color("AccentColor").opacity(0.8)],
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing
                                         )
                                     )
                                     .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
-                                    .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
+                                    .shadow(color: Color("AppText").opacity(0.25), radius: 12, y: 6)
                             }
                             .buttonStyle(.plain)
                             .padding(.bottom, 20)
@@ -336,30 +336,30 @@ struct ProjectCard: View {
                 HStack(spacing: 16) {
                     ZStack {
                         Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color("AccentColor").opacity(0.18), Color("AccentColor").opacity(0.08)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
                             .frame(width: 50, height: 50)
                         
                         Image(systemName: "folder.fill")
                             .font(.title3)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.cyan, Color.cyan.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
+                                        .foregroundStyle(
+                                            LinearGradient(
+                                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
                         Text(project.name)
                             .font(.headline)
-                            .foregroundColor(.primary)
+                            .foregroundColor(Color("AppText"))
                         
                         Text("\(project.counters.count) counters")
                             .font(.caption)
@@ -393,15 +393,15 @@ struct ProjectCard: View {
                     .padding(.trailing, 16)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: Constants.cornerRadius)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Constants.cornerRadius)
-                .stroke(Color(.systemGray5), lineWidth: 0.5)
-        )
+                                .background(
+                                    RoundedRectangle(cornerRadius: Constants.cornerRadius)
+                                        .fill(Color("AppSurface"))
+                                        .shadow(color: Color("AppText").opacity(0.06), radius: 8, y: 2)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Constants.cornerRadius)
+                                        .stroke(Color("AppSeparator"), lineWidth: 0.5)
+                                )
     }
 }
 

@@ -36,7 +36,7 @@ struct NewProjectView: View {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
+                                colors: [Color("AccentColor").opacity(0.18), Color("AccentColor").opacity(0.08)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -47,7 +47,7 @@ struct NewProjectView: View {
                         .font(.system(size: Constants.iconSize))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -86,7 +86,7 @@ struct NewProjectView: View {
                                     Circle()
                                         .fill(
                                             LinearGradient(
-                                                colors: [Color.cyan.opacity(0.2), Color.cyan.opacity(0.1)],
+                                                colors: [Color("AccentColor").opacity(0.18), Color("AccentColor").opacity(0.08)],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             )
@@ -97,7 +97,7 @@ struct NewProjectView: View {
                                         .font(.title3)
                                         .foregroundStyle(
                                             LinearGradient(
-                                                colors: [Color.cyan, Color.cyan.opacity(0.7)],
+                                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.7)],
                                                 startPoint: .topLeading,
                                                 endPoint: .bottomTrailing
                                             )
@@ -109,7 +109,7 @@ struct NewProjectView: View {
                                         Text(url.lastPathComponent)
                                             .font(.body)
                                             .fontWeight(.medium)
-                                            .foregroundColor(.primary)
+                                            .foregroundColor(Color("AppText"))
                                             .lineLimit(1)
                                         Text("Tap to change")
                                             .font(.caption)
@@ -118,7 +118,7 @@ struct NewProjectView: View {
                                         Text("Select PDF Pattern")
                                             .font(.body)
                                             .fontWeight(.medium)
-                                            .foregroundColor(.primary)
+                                            .foregroundColor(Color("AppText"))
                                     }
                                 }
                                 
@@ -131,12 +131,12 @@ struct NewProjectView: View {
                             .padding()
                             .background(
                                 RoundedRectangle(cornerRadius: Constants.cornerRadius8)
-                                    .fill(Color(.systemBackground))
-                                    .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+                                    .fill(Color("AppSurface"))
+                                    .shadow(color: Color("AppText").opacity(0.06), radius: 8, y: 2)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: Constants.cornerRadius8)
-                                    .stroke(Color(.systemGray5), lineWidth: 0.5)
+                                    .stroke(Color("AppSeparator"), lineWidth: 0.5)
                             )
                         }
                         .buttonStyle(.plain)
@@ -149,7 +149,7 @@ struct NewProjectView: View {
                         } label: {
                             Text("Sample PDF")
                                 .font(.caption)
-                                .foregroundColor(.purple)
+                                .foregroundColor(Color("AccentColor"))
                         }
 
                         // Load short PDF
@@ -160,7 +160,7 @@ struct NewProjectView: View {
                         } label: {
                             Text("Short PDF")
                                 .font(.caption)
-                                .foregroundColor(.purple)
+                                .foregroundColor(Color("AccentColor"))
                         }
 
                         // Load big PDF
@@ -171,7 +171,7 @@ struct NewProjectView: View {
                         } label: {
                             Text("Big PDF")
                                 .font(.caption)
-                                .foregroundColor(.purple)
+                                .foregroundColor(Color("AccentColor"))
                         }
                     }
                     .padding(.horizontal)
@@ -193,7 +193,7 @@ struct NewProjectView: View {
                     ZStack {
                         if isFormValid {
                             LinearGradient(
-                                colors: [Color.cyan, Color.cyan.opacity(0.8)],
+                                colors: [Color("AccentColor"), Color("AccentColor").opacity(0.8)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -208,11 +208,11 @@ struct NewProjectView: View {
                         if isCreating {
                             ProgressView()
                                 .progressViewStyle(.circular)
-                                .tint(.white)
+                                .tint(Color("AppSurface"))
                         } else {
                             Text("Create Project")
                                 .fontWeight(.semibold)
-                                .foregroundColor(.white)
+                                .foregroundColor(Color("AppSurface"))
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -220,7 +220,7 @@ struct NewProjectView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Constants.cornerRadius))
                 }
                 .buttonStyle(.plain)
-                .shadow(color: isFormValid ? Color.black.opacity(0.2) : Color.clear, radius: 8, y: 4)
+                .shadow(color: isFormValid ? Color("AppText").opacity(0.2) : Color.clear, radius: 8, y: 4)
                 .disabled(!isFormValid || isCreating)
                 .padding(.horizontal)
                 .padding(.bottom, 20)
