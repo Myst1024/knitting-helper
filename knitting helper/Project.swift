@@ -19,12 +19,21 @@ private enum FileConstants {
 /// Codable version of a highlight for persistence
 struct CodableHighlight: Identifiable, Codable {
     let id: UUID
-    var rectInCanvas: CGRect
+    // Represent highlight as page/fraction coordinates so positions are
+    // invariant across orientation and scaling. startFraction/endFraction
+    // are in 0..1 relative to the page's visible height on the canvas.
+    var startPage: Int
+    var startFraction: CGFloat
+    var endPage: Int
+    var endFraction: CGFloat
     var colorHex: String // Hex color string like "#FF00FF"
-    
-    init(id: UUID = UUID(), rectInCanvas: CGRect, colorHex: String) {
+
+    init(id: UUID = UUID(), startPage: Int, startFraction: CGFloat, endPage: Int, endFraction: CGFloat, colorHex: String) {
         self.id = id
-        self.rectInCanvas = rectInCanvas
+        self.startPage = startPage
+        self.startFraction = startFraction
+        self.endPage = endPage
+        self.endFraction = endFraction
         self.colorHex = colorHex
     }
 }

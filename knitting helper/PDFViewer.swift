@@ -9,6 +9,32 @@ import SwiftUI
 import UIKit
 import PDFKit
 
+private enum Constants {
+    static let defaultHighlightHeight: CGFloat = 120
+    static let highlightOpacity: CGFloat = 0.35
+    static let selectedHighlightOpacity: CGFloat = 0.6
+    static let highlightStrokeWidth: CGFloat = 2.0
+    static let handleWidth: CGFloat = 80
+    static let handleHeight: CGFloat = 8
+    static let handleCornerRadius: CGFloat = 4
+    static let handleStrokeWidth: CGFloat = 1.0
+    static let deleteButtonSize: CGFloat = 28
+    static let deleteButtonInset: CGFloat = 8
+    static let deleteButtonOffset: CGFloat = 12
+    static let deleteIconOpacity: CGFloat = 0.9
+    static let colorPickerButtonSize: CGFloat = 28
+    static let colorPickerButtonSpacing: CGFloat = 8
+    static let highlightTapHitSlop: CGFloat = 10
+    static let minHighlightHeight: CGFloat = 30
+    // Base hit slop applied uniformly; additional asymmetric extras below
+    static let handleHitSlop: CGFloat = 10
+    // Extra horizontal expansion applied to handle hit areas (left & right)
+    static let handleHitExtraHorizontal: CGFloat = 10
+    // Extra vertical expansion for top and bottom handles
+    static let handleHitExtraTop: CGFloat = 20
+    static let handleHitExtraBottom: CGFloat = 20
+}
+
 struct PDFViewer: View {
     let url: URL
     @Binding var shouldAddHighlight: Bool
@@ -141,6 +167,23 @@ struct PDFKitView: UIViewRepresentable {
             context.coordinator.syncOverlay()
             DispatchQueue.main.async { shouldAddHighlight = false }
         }
+
+        // If the URL/document changed, replace the document and clear cached images
+        if context.coordinator.document?.documentURL != url {
+            let newDoc = PDFDocument(url: url)
+            context.coordinator.document = newDoc
+            context.coordinator.canvasView?.document = newDoc
+            // Clear any cached raster images for previous document to avoid visual artifacts
+            PDFCanvasView.clearCache()
+            // Remove all highlight subviews (they belong to previous document coordinates)
+            context.coordinator.overlayView?.subviews.forEach { $0.removeFromSuperview() }
+            context.coordinator.overlayView?.highlights = []
+            context.coordinator.overlayView?.selectedID = nil
+            context.coordinator.loadHighlights(highlights)
+            // Force a layout and redraw
+            context.coordinator.layoutCanvas()
+            context.coordinator.syncOverlay()
+        }
     }
     
     func makeCoordinator() -> Coordinator { Coordinator(url: url, highlights: $highlights, scrollOffsetY: $scrollOffsetY) }
@@ -152,31 +195,37 @@ struct PDFKitView: UIViewRepresentable {
     class PDFCanvasView: UIView {
         var document: PDFDocument? { didSet { setNeedsLayout(); setNeedsDisplay() } }
         var pageFrames: [Int: CGRect] = [:] // canvas coordinates
+        private static let imageCache: NSCache<NSString, UIImage> = {
+            let c = NSCache<NSString, UIImage>()
+            // Limit to ~150 MB by default
+            c.totalCostLimit = 150 * 1024 * 1024
+            return c
+        }()
+
+        static func clearCache() {
+            imageCache.removeAllObjects()
+        }
+        private var contentHeightConstraint: NSLayoutConstraint?
         
-        override class var layerClass: AnyClass { CATiledLayer.self }
-        
+        // Switch from CATiledLayer-based drawing to per-page UIImageView subviews.
+        // Each page will have an image view that is rasterized asynchronously and cached.
+        private var pageImageViews: [Int: UIImageView] = [:]
+
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            if let tiled = layer as? CATiledLayer {
-                tiled.levelsOfDetail = 4
-                tiled.levelsOfDetailBias = 4
-                tiled.tileSize = CGSize(width: 512, height: 512)
-            }
             isOpaque = true
             backgroundColor = .clear
             contentMode = .redraw
         }
-        
+
         override func layoutSubviews() {
             super.layoutSubviews()
-            computePageFrames()
-            setNeedsDisplay()
+            computePageFramesAndLayoutViews()
         }
-        
-        private func computePageFrames() {
+
+        private func computePageFramesAndLayoutViews() {
             pageFrames.removeAll()
             guard let doc = document else { return }
-            // Compute width equal to self.bounds.width; scale each page to that width and stack vertically
             let targetWidth = bounds.width > 0 ? bounds.width : 1
             var y: CGFloat = 0
             for i in 0..<doc.pageCount {
@@ -186,42 +235,85 @@ struct PDFKitView: UIViewRepresentable {
                 let pageHeight = media.height * scale
                 let frame = CGRect(x: 0, y: y, width: targetWidth, height: pageHeight)
                 pageFrames[i] = frame
+
+                // Ensure there is an imageView for this page
+                if let imgView = pageImageViews[i] {
+                    imgView.frame = frame
+                } else {
+                    let iv = UIImageView(frame: frame)
+                    iv.backgroundColor = .white
+                    // Rendered images are rasterized to exact view size; use scaleToFill so they map 1:1.
+                    iv.contentMode = .scaleToFill
+                    iv.clipsToBounds = true
+                    addSubview(iv)
+                    pageImageViews[i] = iv
+                    // Kick off rasterization
+                    rasterizePageIfNeeded(index: i, page: page, targetSize: frame.size, imageView: iv)
+                }
+
                 y += pageHeight
             }
-            // Update intrinsic/content size via constraints if inside a container
-            if let heightConstraint = constraints.first(where: { $0.firstAttribute == .height }) {
-                heightConstraint.constant = y
+
+            // Remove any image views for pages that no longer exist
+            let validKeys = Set(0..<doc.pageCount)
+            for (idx, iv) in pageImageViews {
+                if !validKeys.contains(idx) {
+                    iv.removeFromSuperview()
+                    pageImageViews.removeValue(forKey: idx)
+                }
+            }
+
+            // Update height constraint
+            if let hc = contentHeightConstraint {
+                hc.constant = y
             } else {
                 let c = heightAnchor.constraint(equalToConstant: y)
                 c.priority = .required
                 c.isActive = true
+                contentHeightConstraint = c
             }
         }
-        
-        override func draw(_ rect: CGRect) {
-            guard let ctx = UIGraphicsGetCurrentContext(), let doc = document else { return }
-            
-            // Clear tile background (keep canvas transparent; pages draw their own white background)
-            ctx.setFillColor(UIColor.clear.cgColor)
-            ctx.fill(rect)
-            
-            for (index, frame) in pageFrames {
-                if rect.intersects(frame), let page = doc.page(at: index) {
-                    ctx.saveGState()
-                    // Fill page background
-                    UIColor.white.setFill()
-                    UIBezierPath(rect: frame).fill()
-                    // Compute transform from PDF page space to frame
-                    let media = page.bounds(for: .mediaBox)
-                    let sx = frame.width / media.width
-                    let sy = frame.height / media.height
-                    ctx.translateBy(x: frame.minX, y: frame.minY)
-                    ctx.scaleBy(x: sx, y: sy)
-                    // PDF page draw uses Quartz coordinates (origin bottom-left), flip vertically
-                    ctx.translateBy(x: 0, y: media.height)
-                    ctx.scaleBy(x: 1, y: -1)
-                    page.draw(with: .mediaBox, to: ctx)
-                    ctx.restoreGState()
+
+        private func rasterizePageIfNeeded(index: Int, page: PDFPage, targetSize: CGSize, imageView: UIImageView) {
+            let docID = document?.documentURL?.absoluteString ?? "doc_anon"
+            let keyString = "\(docID)_page_\(index)_w_\(Int(targetSize.width))_h_\(Int(targetSize.height))_s_\(Int(UIScreen.main.scale))"
+            let key = NSString(string: keyString)
+            if let cached = PDFCanvasView.imageCache.object(forKey: key) {
+                imageView.image = cached
+                return
+            }
+
+            // Render async at device scale so pixel dimensions match the imageView
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                autoreleasepool {
+                    let deviceScale = UIScreen.main.scale
+                    let format = UIGraphicsImageRendererFormat.default()
+                    format.scale = deviceScale
+                    let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+                    let img = renderer.image { ctx in
+                        let c = ctx.cgContext
+                        UIColor.white.setFill()
+                        c.fill(CGRect(origin: .zero, size: targetSize))
+                        // Map PDF page to renderer coordinate space
+                        let media = page.bounds(for: .mediaBox)
+                        let sx = targetSize.width / max(media.width, 1)
+                        let sy = targetSize.height / max(media.height, 1)
+                        // Translate to top-left of renderer coordinate space and flip vertically
+                        c.translateBy(x: 0, y: targetSize.height)
+                        c.scaleBy(x: 1, y: -1)
+                        // Apply scale to map PDF points -> renderer points
+                        c.scaleBy(x: sx, y: sy)
+                        page.draw(with: .mediaBox, to: c)
+                    }
+                    let cost = Int(targetSize.width * targetSize.height * deviceScale * deviceScale)
+                    PDFCanvasView.imageCache.setObject(img, forKey: key, cost: cost)
+                    DispatchQueue.main.async {
+                        imageView.image = img
+                    }
+                    // Ensure we trigger a layout update if needed
+                    DispatchQueue.main.async {
+                        self?.setNeedsLayout()
+                    }
                 }
             }
         }
@@ -230,10 +322,57 @@ struct PDFKitView: UIViewRepresentable {
     
     /// Transparent overlay view that draws highlights, handles, and delete buttons on top of the PDF canvas.
     /// All drawing is done in canvas coordinate space.
+    // Lightweight model for highlights (shared between Coordinator and overlay)
+    struct HighlightModel: Identifiable {
+        let id: UUID
+        // Canonical storage: page indices + normalized fractions within each page.
+        var startPage: Int
+        var startFraction: CGFloat
+        var endPage: Int
+        var endFraction: CGFloat
+        var color: UIColor
+
+        // Compute a canvas-aligned rect for this highlight using the provided canvas' pageFrames.
+        func rect(in canvas: PDFCanvasView?) -> CGRect {
+            guard let canvas = canvas, !canvas.pageFrames.isEmpty,
+                  let startFrame = canvas.pageFrames[startPage], let endFrame = canvas.pageFrames[endPage] else {
+                // Fallback to proportional mapping within full canvas height.
+                guard let height = canvas?.bounds.height, height > 0 else { return CGRect(x: 0, y: 0, width: canvas?.bounds.width ?? 0, height: Constants.defaultHighlightHeight) }
+                let y = startFraction * height
+                let maxY = endFraction * height
+                let h = max(Constants.minHighlightHeight, maxY - y)
+                return CGRect(x: 0, y: y, width: canvas?.bounds.width ?? 0, height: h)
+            }
+            let y = startFrame.minY + startFraction * startFrame.height
+            let maxY = endFrame.minY + endFraction * endFrame.height
+            let h = max(Constants.minHighlightHeight, maxY - y)
+            return CGRect(x: 0, y: y, width: canvas.bounds.width, height: h)
+        }
+
+        mutating func set(fromPageRange startPage: Int, startFraction: CGFloat, endPage: Int, endFraction: CGFloat) {
+            self.startPage = startPage
+            self.startFraction = startFraction
+            self.endPage = endPage
+            self.endFraction = endFraction
+        }
+
+        init(id: UUID = UUID(), startPage: Int = 0, startFraction: CGFloat = 0, endPage: Int = 0, endFraction: CGFloat = 0, color: UIColor = .purple) {
+            self.id = id
+            self.startPage = startPage
+            self.startFraction = startFraction
+            self.endPage = endPage
+            self.endFraction = endFraction
+            self.color = color
+        }
+    }
+
     class HighlightOverlayView: UIView {
         // MARK: - Properties
-        var highlights: [Coordinator.Highlight] = []
+        var highlights: [HighlightModel] = []
         var selectedID: UUID?
+        private var highlightViews: [UUID: HighlightSubview] = [:]
+        private var deleteButtonView: UIView?
+        private var colorButtonView: UIView?
         
         // MARK: - Initialization
         override init(frame: CGRect) {
@@ -253,55 +392,22 @@ struct PDFKitView: UIViewRepresentable {
         }
         
         override func draw(_ rect: CGRect) {
+            // Keep overlay fully transparent and rely on view-backed highlight subviews
+            // and the view-backed buttons for interactive chrome. Clearing avoids
+            // accumulation from previous non-view-backed drawing.
             guard let ctx = UIGraphicsGetCurrentContext() else { return }
-            
-            // Clear overlay to avoid trails
             ctx.setBlendMode(.clear)
             ctx.fill(rect)
             ctx.setBlendMode(.normal)
-            
-            ctx.saveGState()
-            for h in highlights {
-                let viewRect = h.rectInCanvas
-                let path = UIBezierPath(rect: viewRect)
-                h.color.withAlphaComponent(Coordinator.Constants.highlightOpacity).setFill()
-                path.fill()
-                
-                // If selected, draw a subtle border with drop shadow and edge handles
-                if h.id == selectedID {
-                    ctx.saveGState()
-                    ctx.setShadow(
-                        offset: CGSize(width: 1, height: 4),
-                        blur: 4,
-                        color: UIColor.black.withAlphaComponent(0.2).cgColor
-                    )
-                    let strokePath = UIBezierPath(rect: viewRect.insetBy(dx: -0.5, dy: -0.5))
-                    h.color.withAlphaComponent(Coordinator.Constants.selectedHighlightOpacity).setStroke()
-                    strokePath.lineWidth = Coordinator.Constants.highlightStrokeWidth
-                    strokePath.stroke()
-                    ctx.restoreGState()
-                    
-                    // Draw top and bottom edge handles
-                    drawEdgeHandle(at: viewRect.minY, centerX: viewRect.midX, color: h.color, in: ctx)
-                    drawEdgeHandle(at: viewRect.maxY, centerX: viewRect.midX, color: h.color, in: ctx)
-                    
-                    // Draw delete button on the left side, slightly above the highlight
-                    drawDeleteButton(for: viewRect, in: ctx)
-                    
-                    // Draw color picker button to the right of delete button
-                    drawColorPickerButton(for: viewRect, color: h.color, in: ctx)
-                }
-            }
-            ctx.restoreGState()
         }
         
         // MARK: - Drawing Helpers
         private func drawEdgeHandle(at y: CGFloat, centerX: CGFloat, color: UIColor, in ctx: CGContext) {
             let handleRect = CGRect(
-                x: centerX - Coordinator.Constants.handleWidth / 2,
-                y: y - Coordinator.Constants.handleHeight / 2,
-                width: Coordinator.Constants.handleWidth,
-                height: Coordinator.Constants.handleHeight
+                x: centerX - Constants.handleWidth / 2,
+                y: y - Constants.handleHeight / 2,
+                width: Constants.handleWidth,
+                height: Constants.handleHeight
             )
             
             ctx.saveGState()
@@ -311,20 +417,20 @@ struct PDFKitView: UIViewRepresentable {
                 color: UIColor.black.withAlphaComponent(0.3).cgColor
             )
             
-            let path = UIBezierPath(roundedRect: handleRect, cornerRadius: Coordinator.Constants.handleCornerRadius)
+            let path = UIBezierPath(roundedRect: handleRect, cornerRadius: Constants.handleCornerRadius)
             UIColor.white.setFill()
             path.fill()
             color.setStroke()
-            path.lineWidth = Coordinator.Constants.handleStrokeWidth
+            path.lineWidth = Constants.handleStrokeWidth
             path.stroke()
             ctx.restoreGState()
         }
         
         private func drawDeleteButton(for rect: CGRect, in ctx: CGContext) {
-            let size = Coordinator.Constants.deleteButtonSize
+            let size = Constants.deleteButtonSize
             let buttonRect = CGRect(
-                x: rect.minX + Coordinator.Constants.deleteButtonInset,
-                y: rect.minY - size - Coordinator.Constants.deleteButtonOffset,
+                x: rect.minX + Constants.deleteButtonInset,
+                y: rect.minY - size - Constants.deleteButtonOffset,
                 width: size,
                 height: size
             )
@@ -352,16 +458,16 @@ struct PDFKitView: UIViewRepresentable {
                     height: iconSize.height
                 )
                 UIColor.systemRed.setFill()
-                trashIcon.draw(in: iconRect, blendMode: .normal, alpha: Coordinator.Constants.deleteIconOpacity)
+                trashIcon.draw(in: iconRect, blendMode: .normal, alpha: Constants.deleteIconOpacity)
             }
         }
         
         private func drawColorPickerButton(for rect: CGRect, color: UIColor, in ctx: CGContext) {
-            let size = Coordinator.Constants.colorPickerButtonSize
-            let deleteButtonX = rect.minX + Coordinator.Constants.deleteButtonInset
+            let size = Constants.colorPickerButtonSize
+            let deleteButtonX = rect.minX + Constants.deleteButtonInset
             let buttonRect = CGRect(
-                x: deleteButtonX + Coordinator.Constants.deleteButtonSize + Coordinator.Constants.colorPickerButtonSpacing,
-                y: rect.minY - size - Coordinator.Constants.deleteButtonOffset,
+                x: deleteButtonX + Constants.deleteButtonSize + Constants.colorPickerButtonSpacing,
+                y: rect.minY - size - Constants.deleteButtonOffset,
                 width: size,
                 height: size
             )
@@ -393,64 +499,285 @@ struct PDFKitView: UIViewRepresentable {
                 whiteIcon.draw(in: iconRect)
             }
         }
-    }
-    
-    // MARK: - Coordinator
-    
-    /// Coordinator that manages PDF viewing state, highlights, and gesture interactions.
-    /// All highlight geometry is stored in canvas coordinate space for simplicity.
-    class Coordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDelegate {
-        // MARK: - Constants
-        enum Constants {
-            static let highlightOpacity: CGFloat = 0.3
-            static let selectedHighlightOpacity: CGFloat = 0.5
-            static let highlightStrokeWidth: CGFloat = 1.5
-            static let highlightTapHitSlop: CGFloat = 14
-            
-            static let handleWidth: CGFloat = 60
-            static let handleHeight: CGFloat = 8
-            static let handleHitSlop: CGFloat = 8
-            static let handleCornerRadius: CGFloat = 4
-            static let handleStrokeWidth: CGFloat = 2
-            
-            static let deleteButtonSize: CGFloat = 24
-            static let deleteButtonOffset: CGFloat = 8
-            static let deleteButtonInset: CGFloat = 10
-            static let deleteIconOpacity: CGFloat = 0.8
-            
-            static let colorPickerButtonSize: CGFloat = 24
-            static let colorPickerButtonSpacing: CGFloat = 8
-            
-            static let defaultHighlightHeight: CGFloat = 30
-            static let minHighlightHeight: CGFloat = 10
+
+        // MARK: - View-backed highlights (faster incremental updates)
+        /// Update visual subviews to match the provided model. This avoids full redraws.
+        func update(highlights newHighlights: [HighlightModel], selectedID newSelected: UUID?, canvas: PDFCanvasView?) {
+            // Convert arrays to dict for quick lookup
+            var newMap: [UUID: HighlightModel] = [:]
+            for h in newHighlights { newMap[h.id] = h }
+
+            // Remove views for highlights that no longer exist
+            for (id, view) in highlightViews {
+                if newMap[id] == nil {
+                    view.removeFromSuperview()
+                    highlightViews.removeValue(forKey: id)
+                }
+            }
+
+            // Add or update views for each highlight
+            for h in newHighlights {
+                let frame = h.rect(in: canvas) // overlay is pinned to canvas; use canvas for width/frames
+                let frameAdjusted = CGRect(x: 0, y: frame.origin.y, width: bounds.width, height: frame.height)
+                if let v = highlightViews[h.id] {
+                    // Update frame and color if changed
+                    if v.frame.origin.y != frameAdjusted.origin.y || v.frame.size.height != frameAdjusted.size.height || v.frame.size.width != frameAdjusted.size.width {
+                        v.frame = frameAdjusted
+                    }
+                    v.updateColor(h.color)
+                    v.setSelected(h.id == newSelected)
+                } else {
+                    // Create new highlight view
+                    let v = HighlightSubview(frame: frameAdjusted)
+                    v.setSelected(h.id == newSelected)
+                    addSubview(v)
+                    highlightViews[h.id] = v
+                }
+            }
+
+            // Ensure selection state for any views not in newHighlights (safety)
+            for (id, v) in highlightViews {
+                v.setSelected(id == newSelected)
+            }
+
+            // Keep model in sync
+            highlights = newHighlights
+            selectedID = newSelected
+
+            // Manage view-backed delete + color picker buttons for the selected highlight.
+            // Buttons are non-interactive (isUserInteractionEnabled = false) so gesture
+            // handling remains centralized in the Coordinator.
+            if let sel = newSelected, let model = newMap[sel] {
+                // Delete button
+                let deleteSize = Constants.deleteButtonSize
+                let modelRectRaw = model.rect(in: canvas)
+                let modelRect = CGRect(x: 0, y: modelRectRaw.minY, width: bounds.width, height: modelRectRaw.height)
+                let deleteFrame = CGRect(
+                    x: modelRect.minX + Constants.deleteButtonInset,
+                    y: modelRect.minY - deleteSize - Constants.deleteButtonOffset,
+                    width: deleteSize,
+                    height: deleteSize
+                )
+                if let db = deleteButtonView {
+                    db.frame = deleteFrame
+                } else {
+                    let db = UIView(frame: deleteFrame)
+                    db.backgroundColor = .white
+                    db.layer.cornerRadius = deleteSize / 2
+                    db.layer.shadowColor = UIColor.black.withAlphaComponent(0.4).cgColor
+                    db.layer.shadowOffset = CGSize(width: 0, height: 4)
+                    db.layer.shadowRadius = 8
+                    db.layer.shadowOpacity = 1.0
+                    db.isUserInteractionEnabled = false
+
+                    // Trash icon
+                    let iconConfig = UIImage.SymbolConfiguration(pointSize: deleteSize / 2, weight: .medium)
+                    if let trash = UIImage(systemName: "trash.fill", withConfiguration: iconConfig)?.withTintColor(.systemRed, renderingMode: .alwaysOriginal) {
+                        let iv = UIImageView(image: trash)
+                        iv.translatesAutoresizingMaskIntoConstraints = false
+                        iv.contentMode = .scaleAspectFit
+                        db.addSubview(iv)
+                        NSLayoutConstraint.activate([
+                            iv.centerXAnchor.constraint(equalTo: db.centerXAnchor),
+                            iv.centerYAnchor.constraint(equalTo: db.centerYAnchor),
+                            iv.widthAnchor.constraint(lessThanOrEqualTo: db.widthAnchor, multiplier: 0.7),
+                            iv.heightAnchor.constraint(lessThanOrEqualTo: db.heightAnchor, multiplier: 0.7),
+                        ])
+                    }
+
+                    addSubview(db)
+                    deleteButtonView = db
+                }
+
+                // Color picker button
+                let colorSize = Constants.colorPickerButtonSize
+                let deleteButtonX = modelRect.minX + Constants.deleteButtonInset
+                let colorFrame = CGRect(
+                    x: deleteButtonX + Constants.deleteButtonSize + Constants.colorPickerButtonSpacing,
+                    y: modelRect.minY - colorSize - Constants.deleteButtonOffset,
+                    width: colorSize,
+                    height: colorSize
+                )
+                if let cb = colorButtonView {
+                    cb.frame = colorFrame
+                    cb.backgroundColor = model.color
+                } else {
+                    let cb = UIView(frame: colorFrame)
+                    cb.backgroundColor = model.color
+                    cb.layer.cornerRadius = colorSize / 2
+                    cb.layer.shadowColor = UIColor.black.withAlphaComponent(0.4).cgColor
+                    cb.layer.shadowOffset = CGSize(width: 0, height: 4)
+                    cb.layer.shadowRadius = 8
+                    cb.layer.shadowOpacity = 1.0
+                    cb.isUserInteractionEnabled = false
+
+                    let iconConfig = UIImage.SymbolConfiguration(pointSize: colorSize / 2, weight: .medium)
+                    if let palette = UIImage(systemName: "paintpalette.fill", withConfiguration: iconConfig)?.withTintColor(.white, renderingMode: .alwaysOriginal) {
+                        let iv = UIImageView(image: palette)
+                        iv.translatesAutoresizingMaskIntoConstraints = false
+                        iv.contentMode = .scaleAspectFit
+                        cb.addSubview(iv)
+                        NSLayoutConstraint.activate([
+                            iv.centerXAnchor.constraint(equalTo: cb.centerXAnchor),
+                            iv.centerYAnchor.constraint(equalTo: cb.centerYAnchor),
+                            iv.widthAnchor.constraint(lessThanOrEqualTo: cb.widthAnchor, multiplier: 0.7),
+                            iv.heightAnchor.constraint(lessThanOrEqualTo: cb.heightAnchor, multiplier: 0.7),
+                        ])
+                    }
+
+                    addSubview(cb)
+                    colorButtonView = cb
+                }
+
+                // Ensure buttons are above highlight subviews
+                if let db = deleteButtonView { bringSubviewToFront(db) }
+                if let cb = colorButtonView { bringSubviewToFront(cb) }
+            } else {
+                // Remove any button chrome when nothing is selected
+                deleteButtonView?.removeFromSuperview()
+                deleteButtonView = nil
+                colorButtonView?.removeFromSuperview()
+                colorButtonView = nil
+            }
         }
-        
-        // MARK: - Properties
-        let url: URL
-        weak var contentView: UIView?
-        weak var canvasView: PDFCanvasView?
-        weak var overlayView: HighlightOverlayView?
-        var document: PDFDocument?
+    }
+
+    /// Lightweight view representing a single highlight. Updating its frame/color is GPU-accelerated.
+    class HighlightSubview: UIView {
+        private let fillView = UIView()
+        private let topHandle = UIView()
+        private let bottomHandle = UIView()
+        private let topBorder = UIView()
+        private let bottomBorder = UIView()
+        private var currentColor: UIColor = .systemYellow
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            commonInit()
+        }
+
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            commonInit()
+        }
+
+        private func commonInit() {
+            fillView.backgroundColor = UIColor.systemYellow.withAlphaComponent(0.35)
+            fillView.isUserInteractionEnabled = false
+            fillView.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(fillView)
+
+            NSLayoutConstraint.activate([
+                fillView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                fillView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                fillView.topAnchor.constraint(equalTo: topAnchor),
+                fillView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ])
+            // Add thin border views at the top and bottom edges so we can render
+            // a colored border without using the view's layer border (which can
+            // obscure subviews). Borders are underneath the handle views so
+            // handles appear above them.
+            topBorder.translatesAutoresizingMaskIntoConstraints = false
+            topBorder.backgroundColor = .clear
+            addSubview(topBorder)
+            bottomBorder.translatesAutoresizingMaskIntoConstraints = false
+            bottomBorder.backgroundColor = .clear
+            addSubview(bottomBorder)
+            NSLayoutConstraint.activate([
+                topBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
+                topBorder.trailingAnchor.constraint(equalTo: trailingAnchor),
+                topBorder.topAnchor.constraint(equalTo: topAnchor),
+                topBorder.heightAnchor.constraint(equalToConstant: Constants.highlightStrokeWidth),
+
+                bottomBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
+                bottomBorder.trailingAnchor.constraint(equalTo: trailingAnchor),
+                bottomBorder.bottomAnchor.constraint(equalTo: bottomAnchor),
+                bottomBorder.heightAnchor.constraint(equalToConstant: Constants.highlightStrokeWidth),
+            ])
+
+            // Handles are white filled with a subtle colored stroke when selected.
+            topHandle.backgroundColor = .white
+            bottomHandle.backgroundColor = .white
+            topHandle.layer.cornerRadius = Constants.handleCornerRadius
+            bottomHandle.layer.cornerRadius = Constants.handleCornerRadius
+            topHandle.translatesAutoresizingMaskIntoConstraints = false
+            bottomHandle.translatesAutoresizingMaskIntoConstraints = false
+            // Add handles after borders so they render above the border views
+            addSubview(topHandle)
+            addSubview(bottomHandle)
+
+            NSLayoutConstraint.activate([
+                topHandle.widthAnchor.constraint(equalToConstant: Constants.handleWidth),
+                topHandle.heightAnchor.constraint(equalToConstant: Constants.handleHeight),
+                topHandle.centerXAnchor.constraint(equalTo: centerXAnchor),
+                topHandle.topAnchor.constraint(equalTo: topAnchor, constant: -Constants.handleHeight / 2),
+
+                bottomHandle.widthAnchor.constraint(equalToConstant: Constants.handleWidth),
+                bottomHandle.heightAnchor.constraint(equalToConstant: Constants.handleHeight),
+                bottomHandle.centerXAnchor.constraint(equalTo: centerXAnchor),
+                bottomHandle.bottomAnchor.constraint(equalTo: bottomAnchor, constant: Constants.handleHeight / 2),
+            ])
+        }
+
+        func updateColor(_ color: UIColor) {
+            currentColor = color
+            fillView.backgroundColor = color.withAlphaComponent(Constants.highlightOpacity)
+            // If currently selected, update the visible borders and handle strokes
+            if !topBorder.isHidden {
+                topBorder.backgroundColor = color
+                bottomBorder.backgroundColor = color
+                topHandle.layer.borderColor = color.cgColor
+                bottomHandle.layer.borderColor = color.cgColor
+                topHandle.layer.borderWidth = Constants.handleStrokeWidth
+                bottomHandle.layer.borderWidth = Constants.handleStrokeWidth
+            }
+        }
+
+        func setSelected(_ selected: Bool) {
+            topHandle.isHidden = !selected
+            bottomHandle.isHidden = !selected
+            // Use the border subviews instead of the layer border so handles
+            // remain visually on top. Update their color and visibility.
+            topBorder.isHidden = !selected
+            bottomBorder.isHidden = !selected
+            if selected {
+                topBorder.backgroundColor = currentColor
+                bottomBorder.backgroundColor = currentColor
+                topHandle.layer.borderColor = currentColor.cgColor
+                bottomHandle.layer.borderColor = currentColor.cgColor
+                topHandle.layer.borderWidth = Constants.handleStrokeWidth
+                bottomHandle.layer.borderWidth = Constants.handleStrokeWidth
+            } else {
+                topHandle.layer.borderWidth = 0.0
+                bottomHandle.layer.borderWidth = 0.0
+            }
+        }
+    }
+
+    // MARK: - Coordinator
+
+    class Coordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDelegate {
+        var url: URL
         var highlightsBinding: Binding<[CodableHighlight]>
         var scrollOffsetYBinding: Binding<Double>
-        var hasRestoredScrollPosition = false
+
+        var contentView: UIView?
+        var canvasView: PDFCanvasView?
+        var overlayView: HighlightOverlayView?
+
+        // Document reference for cache invalidation and change detection
+        var document: PDFDocument?
+        var hasRestoredScrollPosition: Bool = false
+
         var initialScrollOffsetY: Double = 0
-        
-        // MARK: - Models
-        
-        /// Represents a highlight rectangle in canvas coordinate space.
-        /// Full-width highlighting with vertical-only resizing.
-        struct Highlight: Identifiable {
-            let id: UUID
-            var rectInCanvas: CGRect
-            var color: UIColor
-        }
-        
-        // MARK: - State
-        var highlights: [Highlight] = []
+
+        // Models
+        // (High-level HighlightModel is declared at file scope)
+
+        // State
+        var highlights: [HighlightModel] = []
         var selectedHighlightID: UUID?
         var showingColorPicker = false
-        
+
         // Gesture state
         private var isDragging = false
         private var isResizing = false
@@ -459,117 +786,148 @@ struct PDFKitView: UIViewRepresentable {
         private var dragStartRect: CGRect?
         private var resizeAnchorY: CGFloat?
         private var shouldBlockScrolling = false
-        
-        enum ResizeEdge {
-            case top, bottom
-        }
-        
+
+        enum ResizeEdge { case top, bottom }
+
         init(url: URL, highlights: Binding<[CodableHighlight]>, scrollOffsetY: Binding<Double>) {
             self.url = url
             self.highlightsBinding = highlights
             self.scrollOffsetYBinding = scrollOffsetY
             super.init()
         }
-        
-        // MARK: - Canvas Management
+
+        // Canvas Management
         func layoutCanvas() {
             canvasView?.setNeedsLayout()
             canvasView?.layoutIfNeeded()
             syncOverlay()
         }
-        
+
         func syncOverlay() {
-            guard let overlay = overlayView, let canvas = canvasView else { return }
-            // Overlay is pinned to canvas via Auto Layout; just update its model and redraw
-            overlay.highlights = highlights
-            overlay.selectedID = selectedHighlightID
-            overlay.setNeedsDisplay()
+            guard let overlay = overlayView else { return }
+            overlay.update(highlights: highlights, selectedID: selectedHighlightID, canvas: canvasView)
         }
-        
-        // MARK: - Highlight Persistence
-        
+
+        // Highlight Persistence
         func loadHighlights(_ codableHighlights: [CodableHighlight]) {
-            highlights = codableHighlights.map { codable in
-                Highlight(
-                    id: codable.id,
-                    rectInCanvas: codable.rectInCanvas,
-                    color: UIColor(hex: codable.colorHex) ?? .purple
-                )
+            // Convert stored page+fraction positions into canvas rects
+            var models: [HighlightModel] = []
+            for codable in codableHighlights {
+                // Create canonical model from stored page+fractions
+                let model = HighlightModel(id: codable.id, startPage: codable.startPage, startFraction: codable.startFraction, endPage: codable.endPage, endFraction: codable.endFraction, color: UIColor(hex: codable.colorHex) ?? .purple)
+                models.append(model)
             }
+            highlights = models
             syncOverlay()
         }
-        
+
         func getHighlights() -> [CodableHighlight] {
-            return highlights.map { highlight in
-                CodableHighlight(
-                    id: highlight.id,
-                    rectInCanvas: highlight.rectInCanvas,
-                    colorHex: highlight.color.toHex()
-                )
+            // Already stored as page+fractions in the canonical model
+            return highlights.map { h in
+                CodableHighlight(id: h.id, startPage: h.startPage, startFraction: h.startFraction, endPage: h.endPage, endFraction: h.endFraction, colorHex: h.color.toHex())
             }
         }
-        
+
+        // MARK: - Coordinate conversion helpers
+        private func canvasRectToPageRange(_ rect: CGRect) -> (Int, CGFloat, Int, CGFloat) {
+            guard let canvas = canvasView, !canvas.pageFrames.isEmpty else {
+                // Fallback: treat entire canvas as page 0
+                let height = max(1, canvasView?.bounds.height ?? 1)
+                let startFrac = max(0, min(1, rect.minY / height))
+                let endFrac = max(0, min(1, rect.maxY / height))
+                return (0, startFrac, 0, endFrac)
+            }
+
+            // Find start page
+            var startPage = 0
+            var startFrac: CGFloat = 0
+            var endPage = 0
+            var endFrac: CGFloat = 0
+
+            // Iterate pages to find intersections
+            for (pageIndex, frame) in canvas.pageFrames.sorted(by: { $0.key < $1.key }) {
+                let pageRect = frame
+                if rect.minY >= pageRect.minY && rect.minY <= pageRect.maxY {
+                    startPage = pageIndex
+                    startFrac = (rect.minY - pageRect.minY) / max(1, pageRect.height)
+                }
+                if rect.maxY >= pageRect.minY && rect.maxY <= pageRect.maxY {
+                    endPage = pageIndex
+                    endFrac = (rect.maxY - pageRect.minY) / max(1, pageRect.height)
+                }
+            }
+
+            // Clamp
+            startFrac = max(0, min(1, startFrac))
+            endFrac = max(0, min(1, endFrac))
+            return (startPage, startFrac, endPage, endFrac)
+        }
+
+        private func pageRangeToCanvasRect(startPage: Int, startFraction: CGFloat, endPage: Int, endFraction: CGFloat) -> CGRect? {
+            guard let canvas = canvasView, !canvas.pageFrames.isEmpty else {
+                // Fallback: approximate using canvas height
+                guard let height = canvasView?.bounds.height, height > 0 else { return nil }
+                let y = startFraction * height
+                let h = max(Constants.minHighlightHeight, (endFraction * height) - (startFraction * height))
+                return CGRect(x: 0, y: y, width: canvasView?.bounds.width ?? 0, height: h)
+            }
+
+            guard let startFrame = canvas.pageFrames[startPage], let endFrame = canvas.pageFrames[endPage] else { return nil }
+            let y = startFrame.minY + startFraction * startFrame.height
+            let maxY = endFrame.minY + endFraction * endFrame.height
+            let height = max(Constants.minHighlightHeight, maxY - y)
+            return CGRect(x: 0, y: y, width: canvas.bounds.width, height: height)
+        }
+
         private func syncHighlightsToBinding() {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 self.highlightsBinding.wrappedValue = self.getHighlights()
             }
         }
-        
-        // MARK: - Highlight Management
+
+        // Highlight Management
         func addHighlight() {
             guard let canvas = canvasView else { return }
-            // Ensure canvas has computed page frames
             if canvas.pageFrames.isEmpty { layoutCanvas() }
-
-            // Compute center point of visible scroll area in canvas coordinates
             guard let scroll = canvas.superview?.superview as? UIScrollView else { return }
-            // Use the center point of the scroll view's visible bounds; convert(from:) will account for contentOffset
             let visibleCenterInScroll = CGPoint(x: scroll.bounds.midX, y: scroll.bounds.midY)
-            // Convert that point into canvas coordinates
             let centerInCanvas = canvas.convert(visibleCenterInScroll, from: scroll)
-
-            // Create full-width highlight centered at that Y, clamped to canvas bounds
-            var highlightY = centerInCanvas.y - Constants.defaultHighlightHeight / 2
-            highlightY = max(0, min(highlightY, max(0, canvas.bounds.height - Constants.defaultHighlightHeight)))
-            let rectInCanvas = CGRect(x: 0, y: highlightY, width: canvas.bounds.width, height: Constants.defaultHighlightHeight)
-            let h = Highlight(id: UUID(), rectInCanvas: rectInCanvas, color: .purple)
+            // Determine page/fraction for a centered default-size highlight
+            let defaultRect = CGRect(x: 0, y: centerInCanvas.y - Constants.defaultHighlightHeight / 2, width: canvas.bounds.width, height: Constants.defaultHighlightHeight)
+            let (sPage, sFrac, ePage, eFrac) = canvasRectToPageRange(defaultRect)
+            let h = HighlightModel(id: UUID(), startPage: sPage, startFraction: sFrac, endPage: ePage, endFraction: eFrac, color: .purple)
+            // Ensure canonical rect exists
+            if pageRangeToCanvasRect(startPage: sPage, startFraction: sFrac, endPage: ePage, endFraction: eFrac) != nil {
+                // No-op; the rect will be computed by overlay when rendering
+            }
             highlights.append(h)
             syncOverlay()
             syncHighlightsToBinding()
         }
-        
-        // MARK: - Gesture Handlers
-        
+
+        // Gesture Handlers
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let canvas = canvasView, let overlay = overlayView else { return }
             let location = gesture.location(in: canvas)
-            
-            // Priority 1: Check delete button tap
             if let selectedID = selectedHighlightID,
-               let selectedHighlight = highlights.first(where: { $0.id == selectedID }),
-               isDeleteButtonTapped(at: location, for: selectedHighlight.rectInCanvas) {
-                highlights.removeAll { $0.id == selectedID }
-                selectedHighlightID = nil
-                overlay.selectedID = nil
-                overlay.highlights = highlights
-                overlay.setNeedsDisplay()
-                syncHighlightsToBinding()
-                return
+               let selectedHighlight = highlights.first(where: { $0.id == selectedID }) {
+                let selRect = selectedHighlight.rect(in: canvas)
+                if isDeleteButtonTapped(at: location, for: selRect) {
+                    highlights.removeAll { $0.id == selectedID }
+                    selectedHighlightID = nil
+                    overlay.update(highlights: highlights, selectedID: nil, canvas: canvasView)
+                    syncHighlightsToBinding()
+                    return
+                }
+                if isColorPickerButtonTapped(at: location, for: selRect) {
+                    showColorPicker(for: selectedHighlight)
+                    return
+                }
             }
-            
-            // Priority 1.5: Check color picker button tap
-            if let selectedID = selectedHighlightID,
-               let selectedHighlight = highlights.first(where: { $0.id == selectedID }),
-               isColorPickerButtonTapped(at: location, for: selectedHighlight.rectInCanvas) {
-                showColorPicker(for: selectedHighlight)
-                return
-            }
-            
-            // Priority 2: Check highlight tap (with extended hit area)
             var foundHighlight = false
             for h in highlights {
-                let hitArea = h.rectInCanvas.insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
+                let hitArea = h.rect(in: canvas).insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
                 if hitArea.contains(location) {
                     selectedHighlightID = h.id
                     overlay.selectedID = selectedHighlightID
@@ -577,217 +935,139 @@ struct PDFKitView: UIViewRepresentable {
                     break
                 }
             }
-            
-            // Deselect if tapped outside
-            if !foundHighlight {
-                selectedHighlightID = nil
-                overlay.selectedID = nil
-            }
-            overlay.setNeedsDisplay()
+            if !foundHighlight { selectedHighlightID = nil }
+            overlay.update(highlights: highlights, selectedID: selectedHighlightID, canvas: canvasView)
         }
-        
+
         @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
             guard let canvas = canvasView, let overlay = overlayView else { return }
             let location = gesture.location(in: canvas)
-            
             switch gesture.state {
             case .began:
                 shouldBlockScrolling = true
-                
-                // PRIORITY 1: Check if starting on a top/bottom edge handle of any highlight
                 var foundHandle = false
                 for h in highlights {
-                    if let edge = detectEdgeHandle(at: location, for: h.rectInCanvas) {
+                    let rect = h.rect(in: canvas)
+                    if let edge = detectEdgeHandle(at: location, for: rect) {
                         selectedHighlightID = h.id
                         overlay.selectedID = selectedHighlightID
                         isResizing = true
                         resizingEdge = edge
                         dragStartPointInCanvas = location
-                        dragStartRect = h.rectInCanvas
-                        // Set the anchor Y as the opposite edge
-                        resizeAnchorY = (edge == .top) ? h.rectInCanvas.maxY : h.rectInCanvas.minY
+                        dragStartRect = rect
+                        resizeAnchorY = (edge == .top) ? rect.maxY : rect.minY
                         foundHandle = true
                         break
                     }
                 }
-                
-                // PRIORITY 2: If not on a handle, check if on highlight body
                 if !foundHandle {
                     for h in highlights {
-                        let hitArea = h.rectInCanvas.insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
+                        let rect = h.rect(in: canvas)
+                        let hitArea = rect.insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
                         if hitArea.contains(location) {
                             selectedHighlightID = h.id
                             overlay.selectedID = selectedHighlightID
                             isDragging = true
                             dragStartPointInCanvas = location
-                            dragStartRect = h.rectInCanvas
+                            dragStartRect = rect
                             foundHandle = true
                             break
                         }
                     }
-                    
-                    if !foundHandle {
-                        shouldBlockScrolling = false
-                    }
+                    if !foundHandle { shouldBlockScrolling = false }
                 }
-                
-                // Disable scroll while dragging or resizing
-                if isDragging || isResizing {
-                    if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = false }
-                }
-                
-                overlay.setNeedsDisplay()
+                if isDragging || isResizing { if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = false } }
+                overlay.update(highlights: highlights, selectedID: selectedHighlightID, canvas: canvasView)
             case .changed:
                 guard let startPoint = dragStartPointInCanvas, let startRect = dragStartRect, let selectedID = selectedHighlightID else { return }
                 guard isDragging || isResizing else { return }
                 guard let hIndex = highlights.firstIndex(where: { $0.id == selectedID }) else { return }
                 guard let canvas = canvasView else { return }
-                
                 let dy = location.y - startPoint.y
-                var newRect: CGRect
-                
                 if isDragging {
-                    // Move the entire highlight vertically only
-                    newRect = CGRect(x: 0, y: startRect.minY + dy, width: canvas.bounds.width, height: startRect.height)
+                    let newY = startRect.origin.y + dy
+                    // Compute new rect in canvas coordinates and convert to page fractions
+                    let newRect = CGRect(x: 0, y: max(0, min(newY, max(0, canvas.bounds.height - (startRect.height)))), width: canvas.bounds.width, height: startRect.height)
+                    let (sPage, sFrac, ePage, eFrac) = canvasRectToPageRange(newRect)
+                    highlights[hIndex].set(fromPageRange: sPage, startFraction: sFrac, endPage: ePage, endFraction: eFrac)
                 } else if isResizing, let anchorY = resizeAnchorY {
-                    // Resize from top or bottom edge
                     let minY = min(anchorY, location.y)
                     let maxY = max(anchorY, location.y)
-                    
-                    newRect = CGRect(x: 0, y: minY, width: canvas.bounds.width, height: maxY - minY)
-                    
-                    // Ensure minimum height
-                    if newRect.height < Constants.minHighlightHeight {
-                        return
-                    }
-                } else {
-                    return
-                }
-                
-                highlights[hIndex].rectInCanvas = newRect
-                overlay.highlights = highlights
-                overlay.setNeedsDisplay()
+                    let newRect = CGRect(x: 0, y: minY, width: canvas.bounds.width, height: max(Constants.minHighlightHeight, maxY - minY))
+                    let (sPage, sFrac, ePage, eFrac) = canvasRectToPageRange(newRect)
+                    highlights[hIndex].set(fromPageRange: sPage, startFraction: sFrac, endPage: ePage, endFraction: eFrac)
+                } else { return }
+                overlay.update(highlights: highlights, selectedID: selectedHighlightID, canvas: canvasView)
             case .ended, .cancelled, .failed:
-                // Save highlights after drag/resize completes
+                // Nothing extra needed here; highlights already canonicalized during interactions.
+
                 syncHighlightsToBinding()
-                
-                isDragging = false
-                isResizing = false
-                resizingEdge = nil
-                dragStartPointInCanvas = nil
-                dragStartRect = nil
-                resizeAnchorY = nil
-                shouldBlockScrolling = false
+                isDragging = false; isResizing = false; resizingEdge = nil; dragStartPointInCanvas = nil; dragStartRect = nil; resizeAnchorY = nil; shouldBlockScrolling = false
                 if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = true }
             default: break
             }
         }
-        
-        // MARK: - Helper Methods
+
+        // Helpers
         private func detectEdgeHandle(at point: CGPoint, for rect: CGRect) -> ResizeEdge? {
             let centerX = rect.midX
-            
-            // Top handle bounds with hitslop
-            let topHandle = CGRect(
-                x: centerX - Constants.handleWidth / 2,
-                y: rect.minY - Constants.handleHeight / 2,
-                width: Constants.handleWidth,
-                height: Constants.handleHeight
-            )
-            let topHitArea = topHandle.insetBy(dx: -Constants.handleHitSlop, dy: -Constants.handleHitSlop)
-            if topHitArea.contains(point) {
-                return .top
-            }
-            
-            // Bottom handle bounds with hitslop
-            let bottomHandle = CGRect(
-                x: centerX - Constants.handleWidth / 2,
-                y: rect.maxY - Constants.handleHeight / 2,
-                width: Constants.handleWidth,
-                height: Constants.handleHeight
-            )
-            let bottomHitArea = bottomHandle.insetBy(dx: -Constants.handleHitSlop, dy: -Constants.handleHitSlop)
-            if bottomHitArea.contains(point) {
-                return .bottom
-            }
-            
+            // Create base handle rects centered horizontally
+            let topHandle = CGRect(x: centerX - Constants.handleWidth / 2, y: rect.minY - Constants.handleHeight / 2, width: Constants.handleWidth, height: Constants.handleHeight)
+            let bottomHandle = CGRect(x: centerX - Constants.handleWidth / 2, y: rect.maxY - Constants.handleHeight / 2, width: Constants.handleWidth, height: Constants.handleHeight)
+
+            // Expand horizontally by handleHitSlop + extra horizontal, and vertically by base slop plus asymmetric extras
+            let topHitArea = topHandle.insetBy(dx: -(Constants.handleHitSlop + Constants.handleHitExtraHorizontal), dy: -(Constants.handleHitSlop + Constants.handleHitExtraTop))
+            if topHitArea.contains(point) { return .top }
+
+            let bottomHitArea = bottomHandle.insetBy(dx: -(Constants.handleHitSlop + Constants.handleHitExtraHorizontal), dy: -(Constants.handleHitSlop + Constants.handleHitExtraBottom))
+            if bottomHitArea.contains(point) { return .bottom }
             return nil
         }
-        
+
         private func isDeleteButtonTapped(at point: CGPoint, for rect: CGRect) -> Bool {
-            let deleteButton = CGRect(
-                x: rect.minX + Constants.deleteButtonInset,
-                y: rect.minY - Constants.deleteButtonSize - Constants.deleteButtonOffset,
-                width: Constants.deleteButtonSize,
-                height: Constants.deleteButtonSize
-            )
+            let deleteButton = CGRect(x: rect.minX + Constants.deleteButtonInset, y: rect.minY - Constants.deleteButtonSize - Constants.deleteButtonOffset, width: Constants.deleteButtonSize, height: Constants.deleteButtonSize)
             return deleteButton.contains(point)
         }
-        
+
         private func isColorPickerButtonTapped(at point: CGPoint, for rect: CGRect) -> Bool {
             let deleteButtonX = rect.minX + Constants.deleteButtonInset
-            let colorPickerButton = CGRect(
-                x: deleteButtonX + Constants.deleteButtonSize + Constants.colorPickerButtonSpacing,
-                y: rect.minY - Constants.colorPickerButtonSize - Constants.deleteButtonOffset,
-                width: Constants.colorPickerButtonSize,
-                height: Constants.colorPickerButtonSize
-            )
+            let colorPickerButton = CGRect(x: deleteButtonX + Constants.deleteButtonSize + Constants.colorPickerButtonSpacing, y: rect.minY - Constants.colorPickerButtonSize - Constants.deleteButtonOffset, width: Constants.colorPickerButtonSize, height: Constants.colorPickerButtonSize)
             return colorPickerButton.contains(point)
         }
-        
-        private func showColorPicker(for highlight: Highlight) {
+
+        private func showColorPicker(for highlight: HighlightModel) {
             guard let canvas = canvasView else { return }
-            
-            // Create color picker view
-            let pickerView = ColorPickerView(selectedColor: highlight.color) { [weak self] color in
-                self?.updateHighlightColor(highlight.id, to: color)
-            }
-            
-            // Position it near the color picker button
-            let deleteButtonX = highlight.rectInCanvas.minX + Constants.deleteButtonInset
+            let pickerView = ColorPickerView(selectedColor: highlight.color) { [weak self] color in self?.updateHighlightColor(highlight.id, to: color) }
+            let rect = highlight.rect(in: canvas)
+            let deleteButtonX = rect.minX + Constants.deleteButtonInset
             let buttonX = deleteButtonX + Constants.deleteButtonSize + Constants.colorPickerButtonSpacing
-            let buttonY = highlight.rectInCanvas.minY - Constants.colorPickerButtonSize - Constants.deleteButtonOffset
-            
-            // Convert canvas coordinates to screen coordinates
+            let buttonY = rect.minY - Constants.colorPickerButtonSize - Constants.deleteButtonOffset
             let buttonCenter = canvas.convert(CGPoint(x: buttonX + Constants.colorPickerButtonSize / 2, y: buttonY + Constants.colorPickerButtonSize / 2), to: nil)
-            
             pickerView.show(from: buttonCenter, in: canvas)
         }
-        
+
         private func updateHighlightColor(_ highlightID: UUID, to color: UIColor) {
             guard let index = highlights.firstIndex(where: { $0.id == highlightID }) else { return }
             highlights[index].color = color
             syncOverlay()
             syncHighlightsToBinding()
         }
-        
-        // MARK: - UIScrollViewDelegate
-        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
-            return contentView
-        }
-        
+
+        // UIScrollViewDelegate
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? { return contentView }
         func scrollViewDidZoom(_ scrollView: UIScrollView) { syncOverlay() }
-        func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            syncOverlay()
-            // Save scroll position
-            scrollOffsetYBinding.wrappedValue = Double(scrollView.contentOffset.y)
-        }
-        
-        // MARK: - UIGestureRecognizerDelegate
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-            // Block scrollView gestures when interacting with highlights/handles
-            return !shouldBlockScrolling
-        }
-        
+        func scrollViewDidScroll(_ scrollView: UIScrollView) { syncOverlay(); scrollOffsetYBinding.wrappedValue = Double(scrollView.contentOffset.y) }
+
+        // UIGestureRecognizerDelegate
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { return !shouldBlockScrolling }
+
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            // Let pan begin only if it starts on a highlight or edge handle; taps can always begin
             if gestureRecognizer is UIPanGestureRecognizer, let canvas = canvasView {
                 let loc = gestureRecognizer.location(in: canvas)
-                
-                // Check if on any highlight or edge handle (in canvas coordinates)
                 return highlights.contains { h in
-                    let hitArea = h.rectInCanvas.insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
-                    return detectEdgeHandle(at: loc, for: h.rectInCanvas) != nil || hitArea.contains(loc)
+                    let rect = h.rect(in: canvas)
+                    let hitArea = rect.insetBy(dx: -Constants.highlightTapHitSlop, dy: -Constants.highlightTapHitSlop)
+                    return detectEdgeHandle(at: loc, for: rect) != nil || hitArea.contains(loc)
                 }
             }
             return true
