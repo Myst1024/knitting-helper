@@ -794,6 +794,20 @@ struct PDFKitView: UIViewRepresentable {
             self.highlightsBinding = highlights
             self.scrollOffsetYBinding = scrollOffsetY
             super.init()
+            NotificationCenter.default.addObserver(self, selector: #selector(handleOrientationChange), name: UIDevice.orientationDidChangeNotification, object: nil)
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self, name: UIDevice.orientationDidChangeNotification, object: nil)
+        }
+
+        @objc func handleOrientationChange() {
+            // Ensure layout and overlay sync run on main thread after rotation/layout settles
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                guard let self = self else { return }
+                self.layoutCanvas()
+                self.syncOverlay()
+            }
         }
 
         // Canvas Management
