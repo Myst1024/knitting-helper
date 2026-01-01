@@ -32,10 +32,29 @@ class ProjectListViewModel: ObservableObject {
     
     func loadProjects() {
         projects = Project.loadProjects()
+        sortProjects()
+    }
+
+    private func sortProjects() {
+        projects.sort { lhs, rhs in
+            // Sort by lastWorkedOnDate descending (most recent first)
+            // Projects with no date come last
+            switch (lhs.lastWorkedOnDate, rhs.lastWorkedOnDate) {
+            case (let lhsDate?, let rhsDate?):
+                return lhsDate > rhsDate
+            case (let lhsDate?, nil):
+                return true // lhs with date comes before rhs without date
+            case (nil, let rhsDate?):
+                return false // rhs with date comes before lhs without date
+            case (nil, nil):
+                return false // both without date, maintain original order
+            }
+        }
     }
     
     func addProject(_ project: Project) {
         projects.append(project)
+        sortProjects() // Sort so newly created projects appear at top
         do {
             try Project.saveProjects(projects)
         } catch {
@@ -56,6 +75,7 @@ class ProjectListViewModel: ObservableObject {
         // Update in projects array
         if let index = projects.firstIndex(where: { $0.id == updatedProject.id }) {
             projects[index] = updatedProject
+            sortProjects() // Sort so recently opened project appears at top
             do {
                 try Project.saveProjects(projects)
             } catch {
@@ -156,6 +176,7 @@ class ProjectListViewModel: ObservableObject {
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            sortProjects() // Sort so recently updated project appears at top
             // Save to disk
             do {
                 try Project.saveProjects(projects)
@@ -173,6 +194,7 @@ class ProjectListViewModel: ObservableObject {
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            sortProjects() // Sort so recently updated project appears at top
             // Save to disk
             do {
                 try Project.saveProjects(projects)
@@ -203,6 +225,7 @@ class ProjectListViewModel: ObservableObject {
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            sortProjects() // Sort so recently updated project appears at top
             // Save to disk
             do {
                 try Project.saveProjects(projects)
@@ -220,6 +243,7 @@ class ProjectListViewModel: ObservableObject {
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            sortProjects() // Sort so recently updated project appears at top
             // Save to disk
             do {
                 try Project.saveProjects(projects)
@@ -272,8 +296,11 @@ class ProjectListViewModel: ObservableObject {
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            if state.isRunning {
+                sortProjects() // Sort so recently updated project appears at top
+            }
         }
-        
+
         // Save to disk
         do {
             try Project.saveProjects(projects)
