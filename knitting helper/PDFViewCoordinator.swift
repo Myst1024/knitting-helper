@@ -72,6 +72,9 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     private var dragStartRect: CGRect?
     private var noteDragStartPoint: CGPoint?
     private var noteDragStartModel: NoteModel?
+    private var isDraggingBookmark = false
+    private var bookmarkDragStartPoint: CGPoint?
+    private var bookmarkDragStartModel: BookmarkModel?
     private var noteEditorResizeStartPoint: CGPoint?
     private var noteEditorResizeStartSize: CGSize?
     private var noteEditorResizeStartOrigin: CGPoint?
@@ -163,6 +166,15 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             height: PDFConstants.noteIconSize + PDFConstants.noteIconTapHitSlop * 2
         )
     }
+
+    private func bookmarkIconHitArea(at point: CGPoint) -> CGRect {
+        return CGRect(
+            x: point.x - PDFConstants.bookmarkIconSize / 2 - PDFConstants.bookmarkIconTapHitSlop,
+            y: point.y - PDFConstants.bookmarkIconSize / 2 - PDFConstants.bookmarkIconTapHitSlop,
+            width: PDFConstants.bookmarkIconSize + PDFConstants.bookmarkIconTapHitSlop * 2,
+            height: PDFConstants.bookmarkIconSize + PDFConstants.bookmarkIconTapHitSlop * 2
+        )
+    }
     
     /// Creates a NoteEditorView with bindings configured for a specific note
     private func createNoteEditorView(for noteID: UUID) -> NoteEditorView {
@@ -251,7 +263,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     }
 
     func syncBookmarkOverlay(_ bookmarks: [CodableBookmark]? = nil) {
-        guard let bookmarkOverlay = bookmarkOverlayView else { return }
+        guard let bookmarkOverlay = bookmarkOverlayView, let contentView = contentView else { return }
         let bookmarksToUse = bookmarks ?? self.bookmarks.map { model in
             CodableBookmark(
                 id: model.id,
@@ -275,6 +287,8 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         bookmarkOverlay.update(bookmarks: models, canvas: canvasView) { [weak self] bookmarkID, canvasPoint in
             self?.updateBookmarkPosition(bookmarkID: bookmarkID, to: canvasPoint)
         }
+        // Ensure bookmark overlay stays above highlights and note editors
+        contentView.bringSubviewToFront(bookmarkOverlay)
     }
 
     // Highlight Persistence
@@ -603,6 +617,21 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 }
             }
             
+            // Check for bookmark drag (higher precedence than notes)
+            if !foundHandle, bookmarkOverlayView != nil {
+                for bookmark in bookmarks {
+                    let bookmarkPoint = bookmark.point(in: canvas)
+                    if bookmarkIconHitArea(at: bookmarkPoint).contains(location) {
+                        isDraggingBookmark = true
+                        bookmarkDragStartPoint = location
+                        bookmarkDragStartModel = bookmark
+                        foundHandle = true
+                        if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = false }
+                        break
+                    }
+                }
+            }
+
             // Check for note drag
             if !foundHandle, noteOverlayView != nil {
                 for note in notes {
@@ -617,7 +646,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                     }
                 }
             }
-            
+
             if !foundHandle {
                 for h in highlights {
                     let rect = h.rect(in: canvas)
@@ -709,6 +738,33 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                         self?.updateNoteEditorPosition(for: draggedNoteID)
                     }
                 }
+            } else if isDraggingBookmark {
+                guard let startPoint = bookmarkDragStartPoint, let startModel = bookmarkDragStartModel else { return }
+                guard let canvas = canvasView else { return }
+
+                // Ensure canvas is laid out
+                if canvas.pageFrames.isEmpty {
+                    layoutCanvas()
+                }
+
+                let dx = location.x - startPoint.x
+                let dy = location.y - startPoint.y
+                let currentPoint = startModel.point(in: canvas)
+                let newPoint = CGPoint(
+                    x: max(0, min(canvas.bounds.width, currentPoint.x + dx)),
+                    y: max(0, min(canvas.bounds.height, currentPoint.y + dy))
+                )
+
+                // Update the bookmark position in the binding directly
+                var updatedBookmarks = bookmarksBinding.wrappedValue
+                if let index = updatedBookmarks.firstIndex(where: { $0.id == startModel.id }) {
+                    let (page, xFrac, yFrac) = canvasPointToPageFraction(newPoint)
+                    updatedBookmarks[index].page = page
+                    updatedBookmarks[index].xFraction = xFrac
+                    updatedBookmarks[index].yFraction = yFrac
+                    bookmarksBinding.wrappedValue = updatedBookmarks
+                }
+                syncBookmarkOverlay()
             } else {
                 guard let startPoint = dragStartPointInCanvas, let startRect = dragStartRect, let selectedID = selectedHighlightID else { return }
                 guard isDragging || isResizing else { return }
@@ -756,6 +812,10 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 isDraggingNote = false
                 noteDragStartPoint = nil
                 noteDragStartModel = nil
+            } else if isDraggingBookmark {
+                isDraggingBookmark = false
+                bookmarkDragStartPoint = nil
+                bookmarkDragStartModel = nil
             } else {
                 syncHighlightsToBinding()
             }
@@ -966,7 +1026,12 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         
         // Now add to view hierarchy
         contentView.addSubview(hostingController.view)
-        
+
+        // Ensure bookmark overlay stays above the note editor
+        if let bookmarkOverlay = bookmarkOverlayView {
+            contentView.bringSubviewToFront(bookmarkOverlay)
+        }
+
         // Store references
         noteEditorViews[noteID] = hostingController.view
         noteEditorHostingControllers[noteID] = hostingController

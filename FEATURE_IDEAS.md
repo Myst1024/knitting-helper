@@ -141,7 +141,6 @@
 5. ✅ **Progress percentage** - Calculate based on completed highlights/sections
 6. ✅ **Search projects** - Add search bar to project list
 7. ✅ **Sort projects** - Add sort options (name, date, time spent)
-8. ✅ **Haptic feedback** - Add to counter buttons and timer controls
 
 ### Medium Effort (Moderate complexity, good value)
 1. **Photo documentation** - Camera integration, photo storage
