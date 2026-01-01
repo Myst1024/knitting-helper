@@ -51,6 +51,5 @@ enum PDFConstants {
 
     // Bookmark constants
     static let bookmarkIconSize: CGFloat = 28
-    static let bookmarkIconTapHitSlop: CGFloat = 10
 }
 
