@@ -43,7 +43,8 @@ class NewProjectViewModel: ObservableObject {
             let copiedURL = try await copyPDF(from: sourceURL)
             let newProject = Project(
                 name: projectName.trimmingCharacters(in: .whitespaces),
-                pdfURL: copiedURL
+                pdfURL: copiedURL,
+                lastWorkedOnDate: Date()
             )
             
             isCreating = false

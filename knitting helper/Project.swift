@@ -89,8 +89,9 @@ struct Project: Identifiable, Codable {
     var timerElapsedSeconds: Double = 0
     var timerIsRunning: Bool = false
     var timerLastStartTime: Date?
+    var lastWorkedOnDate: Date?
     
-    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], notes: [CodableNote] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerIsRunning: Bool = false, timerLastStartTime: Date? = nil) {
+    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], notes: [CodableNote] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerIsRunning: Bool = false, timerLastStartTime: Date? = nil, lastWorkedOnDate: Date? = nil) {
         self.id = id
         self.name = name
         self.pdfURL = pdfURL
@@ -101,6 +102,7 @@ struct Project: Identifiable, Codable {
         self.timerElapsedSeconds = timerElapsedSeconds
         self.timerIsRunning = timerIsRunning
         self.timerLastStartTime = timerLastStartTime
+        self.lastWorkedOnDate = lastWorkedOnDate
     }
     
     /// Checks if the project's PDF file still exists

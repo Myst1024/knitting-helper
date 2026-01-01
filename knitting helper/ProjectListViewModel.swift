@@ -49,12 +49,26 @@ class ProjectListViewModel: ObservableObject {
         // Stop timer if one is running
         stopTimerIfNeeded()
         
+        // Update last worked on date
+        var updatedProject = project
+        updatedProject.lastWorkedOnDate = Date()
+        
+        // Update in projects array
+        if let index = projects.firstIndex(where: { $0.id == updatedProject.id }) {
+            projects[index] = updatedProject
+            do {
+                try Project.saveProjects(projects)
+            } catch {
+                print("Failed to save last worked on date: \(error)")
+            }
+        }
+        
         withAnimation(.easeInOut(duration: 0.3)) {
-            currentProject = project
+            currentProject = updatedProject
         }
         
         // Initialize timer for the new project
-        initializeTimer(for: project)
+        initializeTimer(for: updatedProject)
     }
     
     func closeProject() {
@@ -137,20 +151,34 @@ class ProjectListViewModel: ObservableObject {
     func updateCurrentProjectHighlights(_ highlights: [CodableHighlight]) {
         guard var current = currentProject else { return }
         current.highlights = highlights
+        current.lastWorkedOnDate = Date()
         currentProject = current
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            // Save to disk
+            do {
+                try Project.saveProjects(projects)
+            } catch {
+                print("Failed to save project: \(error)")
+            }
         }
     }
     
     func updateCurrentProjectCounters(_ counters: [Counter]) {
         guard var current = currentProject else { return }
         current.counters = counters
+        current.lastWorkedOnDate = Date()
         currentProject = current
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            // Save to disk
+            do {
+                try Project.saveProjects(projects)
+            } catch {
+                print("Failed to save project: \(error)")
+            }
         }
     }
     
@@ -170,20 +198,34 @@ class ProjectListViewModel: ObservableObject {
     func updateCurrentProjectNotes(_ notes: [CodableNote]) {
         guard var current = currentProject else { return }
         current.notes = notes
+        current.lastWorkedOnDate = Date()
         currentProject = current
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            // Save to disk
+            do {
+                try Project.saveProjects(projects)
+            } catch {
+                print("Failed to save project: \(error)")
+            }
         }
     }
     
     func addCounterToCurrentProject() {
         guard var current = currentProject else { return }
         current.counters.append(Counter(name: "Counter \(current.counters.count + 1)"))
+        current.lastWorkedOnDate = Date()
         currentProject = current
         // Also update in projects array
         if let index = projects.firstIndex(where: { $0.id == current.id }) {
             projects[index] = current
+            // Save to disk
+            do {
+                try Project.saveProjects(projects)
+            } catch {
+                print("Failed to save project: \(error)")
+            }
         }
     }
     
@@ -220,6 +262,10 @@ class ProjectListViewModel: ObservableObject {
         current.timerElapsedSeconds = state.elapsedSeconds
         current.timerIsRunning = state.isRunning
         current.timerLastStartTime = state.lastStartTime
+        // Update last worked on date when timer is running
+        if state.isRunning {
+            current.lastWorkedOnDate = Date()
+        }
         
         currentProject = current
         
@@ -235,5 +281,6 @@ class ProjectListViewModel: ObservableObject {
             print("Failed to save timer state: \(error)")
         }
     }
+    
 }
 
