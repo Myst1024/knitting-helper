@@ -105,6 +105,24 @@ struct CounterView: View {
             
             // Middle row: value and reps (if applicable)
             HStack(spacing: 10) {
+                // Reset button (moved to left)
+                Button(action: {
+                    counter.value = 0
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient.accentWarm.opacity(counter.value > 0 ? 0.15 : 0.05))
+                            .frame(width: 28, height: 28)
+
+                        Image(systemName: "gobackward")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(counter.value > 0 ? LinearGradient.accentWarm : LinearGradient.disabled)
+                    }
+                }
+                .buttonStyle(.plain)
+                .opacity(counter.value > 0 ? 1 : 0.4)
+                .disabled(counter.value == 0)
+
                 // Decrement button
                 Button(action: {
                     if counter.value > 0 {
@@ -115,7 +133,7 @@ struct CounterView: View {
                         Circle()
                             .fill(counter.value > 0 ? LinearGradient.accent : LinearGradient.disabled)
                             .frame(width: 32, height: 32)
-                        
+
                         Image(systemName: "minus")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.white)
@@ -190,7 +208,7 @@ struct CounterView: View {
                     Divider()
                         .frame(height: 24)
                         .background(Color("AppSeparator"))
-                    
+
                     VStack(spacing: 2) {
                         Text("Reps")
                             .font(.caption2)
@@ -205,25 +223,25 @@ struct CounterView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .fill(LinearGradient.accentTertiaryLight)
                     )
-                }
-                
-                // Reset button
-                Button(action: {
-                    counter.value = 0
-                }) {
-                    ZStack {
-                        Circle()
-                            .fill(LinearGradient.accentWarm.opacity(counter.value > 0 ? 0.15 : 0.05))
-                            .frame(width: 28, height: 28)
-                        
-                        Image(systemName: "gobackward")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(counter.value > 0 ? LinearGradient.accentWarm : LinearGradient.disabled)
+
+                    // Reset reps button (only if reps > 0)
+                    if counter.reps > 0 {
+                        Button(action: {
+                            counter.reps = 0
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(LinearGradient.accentTertiary.opacity(0.15))
+                                    .frame(width: 24, height: 24)
+
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(LinearGradient.accentTertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                .buttonStyle(.plain)
-                .opacity(counter.value > 0 ? 1 : 0.4)
-                .disabled(counter.value == 0)
             }
         }
         .padding(Constants.counterPadding)
