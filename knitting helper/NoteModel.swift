@@ -18,6 +18,7 @@ struct NoteModel: Identifiable {
     var isOpen: Bool // Whether the note editor is currently open
     var width: CGFloat // Note editor width
     var height: CGFloat // Note editor height
+    var color: UIColor // Color of the note icon
 
     // Compute a canvas-aligned point for this note using the provided canvas' pageFrames.
     func point(in canvas: PDFCanvasView?) -> CGPoint {
@@ -43,7 +44,7 @@ struct NoteModel: Identifiable {
         self.yFraction = yFraction
     }
 
-    init(id: UUID = UUID(), page: Int = 0, xFraction: CGFloat = 0.5, yFraction: CGFloat = 0.5, text: String = "", isOpen: Bool = false, width: CGFloat = 0, height: CGFloat = 0) {
+    init(id: UUID = UUID(), page: Int = 0, xFraction: CGFloat = 0.5, yFraction: CGFloat = 0.5, text: String = "", isOpen: Bool = false, width: CGFloat = 0, height: CGFloat = 0, color: UIColor = .systemBlue) {
         self.id = id
         self.page = page
         self.xFraction = xFraction
@@ -52,6 +53,7 @@ struct NoteModel: Identifiable {
         self.isOpen = isOpen
         self.width = width
         self.height = height
+        self.color = color
     }
 }
 

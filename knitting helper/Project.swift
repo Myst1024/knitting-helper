@@ -51,8 +51,9 @@ struct CodableNote: Identifiable, Codable, Equatable {
     var isOpen: Bool // Whether the note editor is currently open
     var width: CGFloat // Note editor width
     var height: CGFloat // Note editor height
+    var colorHex: String // Hex color string like "#FF00FF"
 
-    init(id: UUID = UUID(), page: Int, xFraction: CGFloat, yFraction: CGFloat, text: String = "", isOpen: Bool = false, width: CGFloat = 0, height: CGFloat = 0) {
+    init(id: UUID = UUID(), page: Int, xFraction: CGFloat, yFraction: CGFloat, text: String = "", isOpen: Bool = false, width: CGFloat = 0, height: CGFloat = 0, colorHex: String = "#007AFF") {
         self.id = id
         self.page = page
         self.xFraction = xFraction
@@ -61,6 +62,7 @@ struct CodableNote: Identifiable, Codable, Equatable {
         self.isOpen = isOpen
         self.width = width
         self.height = height
+        self.colorHex = colorHex
     }
     
     static func == (lhs: CodableNote, rhs: CodableNote) -> Bool {
@@ -70,7 +72,8 @@ struct CodableNote: Identifiable, Codable, Equatable {
                lhs.text == rhs.text &&
                lhs.isOpen == rhs.isOpen &&
                abs(lhs.width - rhs.width) < 0.001 &&
-               abs(lhs.height - rhs.height) < 0.001
+               abs(lhs.height - rhs.height) < 0.001 &&
+               lhs.colorHex == rhs.colorHex
     }
 }
 

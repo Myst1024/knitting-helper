@@ -108,8 +108,8 @@ struct ContentView: View {
                                             )
                                             .frame(width: 44, height: 44)
                                         
-                                        Image(systemName: "highlighter")
-                                            .font(.system(size: 20, weight: .semibold))
+                                        Image(systemName: "pencil.tip.crop.circle.badge.plus")
+                                            .font(.system(size: 24, weight: .semibold))
                                             .foregroundColor(.white)
                                     }
                                 }
@@ -143,7 +143,7 @@ struct ContentView: View {
                                             )
                                             .frame(width: 44, height: 44)
                                         
-                                        Image(systemName: "pencil.circle.fill")
+                                        Image(systemName: "square.and.pencil")
                                             .font(.system(size: 20, weight: .semibold))
                                             .foregroundColor(.white)
                                     }

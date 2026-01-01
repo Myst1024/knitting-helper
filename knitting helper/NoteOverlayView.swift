@@ -73,9 +73,10 @@ class NoteOverlayView: UIView {
                     view.frame = frame
                 }
                 view.setOpen(newOpenNoteIDs.contains(note.id))
+                view.setColor(note.color)
             } else {
                 // Create new note icon view
-                let view = NoteIconView(frame: frame)
+                let view = NoteIconView(frame: frame, color: note.color)
                 view.setOpen(newOpenNoteIDs.contains(note.id))
                 addSubview(view)
                 noteIconViews[note.id] = view
@@ -92,6 +93,13 @@ class NoteOverlayView: UIView {
 class NoteIconView: UIView {
     private let iconImageView = UIImageView()
     private var isOpen = false
+    private var noteColor: UIColor = .systemBlue
+    
+    init(frame: CGRect, color: UIColor = .systemBlue) {
+        self.noteColor = color
+        super.init(frame: frame)
+        commonInit()
+    }
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -125,7 +133,7 @@ class NoteIconView: UIView {
         // Create note icon with SF Symbol - pencil in circle (filled version for closed state)
         // Make icon bigger to fill the circle better
         let iconConfig = UIImage.SymbolConfiguration(pointSize: PDFConstants.noteIconSize * 0.65, weight: .medium)
-        let noteIcon = UIImage(systemName: "pencil.circle", withConfiguration: iconConfig)?.withTintColor(.systemBlue, renderingMode: .alwaysOriginal)
+        let noteIcon = UIImage(systemName: "pencil.circle", withConfiguration: iconConfig)?.withTintColor(noteColor, renderingMode: .alwaysOriginal)
         
         iconImageView.image = noteIcon
         iconImageView.contentMode = .scaleAspectFit
@@ -152,14 +160,27 @@ class NoteIconView: UIView {
         let iconConfig = UIImage.SymbolConfiguration(pointSize: PDFConstants.noteIconSize * 0.65, weight: .medium)
         if open {
             // Filled/solid version when open
-            let filledIcon = UIImage(systemName: "pencil.circle.fill", withConfiguration: iconConfig)?.withTintColor(.systemBlue, renderingMode: .alwaysOriginal)
+            let filledIcon = UIImage(systemName: "pencil.circle.fill", withConfiguration: iconConfig)?.withTintColor(noteColor, renderingMode: .alwaysOriginal)
             iconImageView.image = filledIcon
             transform = CGAffineTransform(scaleX: 1.1, y: 1.1) // Slight scale for emphasis
         } else {
             // Outline version when closed
-            let outlineIcon = UIImage(systemName: "pencil.circle", withConfiguration: iconConfig)?.withTintColor(.systemBlue, renderingMode: .alwaysOriginal)
+            let outlineIcon = UIImage(systemName: "pencil.circle", withConfiguration: iconConfig)?.withTintColor(noteColor, renderingMode: .alwaysOriginal)
             iconImageView.image = outlineIcon
             transform = .identity
+        }
+    }
+    
+    func setColor(_ color: UIColor) {
+        noteColor = color
+        // Update icon with new color
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: PDFConstants.noteIconSize * 0.65, weight: .medium)
+        if isOpen {
+            let filledIcon = UIImage(systemName: "pencil.circle.fill", withConfiguration: iconConfig)?.withTintColor(noteColor, renderingMode: .alwaysOriginal)
+            iconImageView.image = filledIcon
+        } else {
+            let outlineIcon = UIImage(systemName: "pencil.circle", withConfiguration: iconConfig)?.withTintColor(noteColor, renderingMode: .alwaysOriginal)
+            iconImageView.image = outlineIcon
         }
     }
 }

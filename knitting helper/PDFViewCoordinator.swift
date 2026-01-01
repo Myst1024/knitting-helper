@@ -143,6 +143,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     /// Creates a NoteEditorView with bindings configured for a specific note
     private func createNoteEditorView(for noteID: UUID) -> NoteEditorView {
         let defaultSize = getNoteEditorSize(for: noteID)
+        let noteColor = note(for: noteID)?.color ?? .systemBlue
         return NoteEditorView(
             text: Binding(
                 get: { [weak self] in
@@ -165,8 +166,13 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 }
             ),
             noteID: noteID,
+            noteColor: Color(noteColor),
             onDelete: { [weak self] in
                 self?.deleteNote(noteID)
+            },
+            onColorPicker: { [weak self] in
+                guard let self = self, let note = self.note(for: noteID) else { return }
+                self.showColorPicker(for: note)
             }
         )
     }
@@ -261,7 +267,8 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 text: codable.text,
                 isOpen: codable.isOpen,
                 width: codable.width,
-                height: codable.height
+                height: codable.height,
+                color: UIColor(hex: codable.colorHex) ?? .systemBlue
             )
             models.append(model)
             
@@ -311,7 +318,8 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 text: n.text,
                 isOpen: isCurrentlyOpen,
                 width: size.width,
-                height: size.height
+                height: size.height,
+                colorHex: n.color.toHex()
             )
         }
     }
@@ -834,7 +842,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         if canvas.pageFrames.isEmpty { layoutCanvas() }
         
         let (page, xFrac, yFrac) = canvasPointToPageFraction(location)
-        let note = NoteModel(id: UUID(), page: page, xFraction: xFrac, yFraction: yFrac, text: "")
+        let note = NoteModel(id: UUID(), page: page, xFraction: xFrac, yFraction: yFrac, text: "", color: .systemBlue)
         notes.append(note)
         syncNoteOverlay()
         syncNotesToBinding()
@@ -1022,6 +1030,35 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         }
         
         presentingVC.present(alert, animated: true)
+    }
+    
+    private func showColorPicker(for note: NoteModel) {
+        guard let canvas = canvasView,
+              let editorView = noteEditorViews[note.id] else { return }
+        
+        let pickerView = ColorPickerView(selectedColor: note.color) { [weak self] color in
+            self?.updateNoteColor(note.id, to: color)
+        }
+        
+        // Position the color picker near the color picker button (bottom left of note editor)
+        let buttonSize = PDFConstants.noteEditorResizeHandleSize - 4
+        let buttonX = editorView.frame.minX - 4 + buttonSize / 2
+        let buttonY = editorView.frame.maxY - 4 - buttonSize / 2
+        let buttonCenter = canvas.convert(CGPoint(x: buttonX, y: buttonY), to: nil)
+        
+        pickerView.show(from: buttonCenter, in: canvas)
+    }
+    
+    private func updateNoteColor(_ noteID: UUID, to color: UIColor) {
+        guard let index = noteIndex(for: noteID) else { return }
+        notes[index].color = color
+        syncNoteOverlay()
+        syncNotesToBinding()
+        
+        // Update the editor view to reflect the new color
+        if let hostingController = noteEditorHostingControllers[noteID] {
+            hostingController.rootView = createNoteEditorView(for: noteID)
+        }
     }
     
     func addNoteAtCenter() {

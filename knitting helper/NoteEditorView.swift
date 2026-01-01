@@ -11,7 +11,9 @@ struct NoteEditorView: View {
     @Binding var text: String
     @Binding var size: CGSize
     let noteID: UUID
+    let noteColor: Color
     let onDelete: () -> Void
+    let onColorPicker: () -> Void
     @FocusState private var isFocused: Bool
     
     var body: some View {
@@ -53,6 +55,28 @@ struct NoteEditorView: View {
                 Spacer()
             }
             
+            // Color picker button in bottom-left corner
+            VStack {
+                Spacer()
+                HStack {
+                    Button {
+                        onColorPicker()
+                    } label: {
+                        Image(systemName: "paintpalette.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(noteColor)
+                            .frame(width: 16, height: 16)
+                            .background(
+                                Circle()
+                                    .fill(Color.white)
+                                    .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 1)
+                            )
+                    }
+                    .offset(x: -4, y: 4)
+                    Spacer()
+                }
+            }
+            
             // Resize handle in bottom-right corner - protrudes
             VStack {
                 Spacer()
@@ -74,9 +98,6 @@ struct NoteEditorView: View {
         .frame(width: size.width, height: size.height)
         .animation(.none, value: size) // Disable animation to prevent visual lag
         .colorScheme(.light) // Force light mode
-        .onAppear {
-            isFocused = true
-        }
     }
 }
 
