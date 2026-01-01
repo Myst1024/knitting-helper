@@ -10,6 +10,7 @@ import Foundation
 // MARK: - Constants
 
 private enum FileConstants {
+    static let appGroupIdentifier = "group.myst1024.knitting-helper"
     static let projectsDirectory = "Projects"
     static let projectsFileName = "projects.json"
 }
@@ -173,7 +174,7 @@ extension Counter: Codable {
 
 extension Project {
     private static var documentsDirectory: URL? {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: FileConstants.appGroupIdentifier)
     }
     
     private static var projectsDirectory: URL? {
