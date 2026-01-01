@@ -12,7 +12,6 @@ import SwiftUI
 private enum Constants {
     static let cornerRadius: CGFloat = 8
     static let maxFieldWidth: CGFloat = 50
-    static let counterPadding: CGFloat = 8
     static let shadowRadius: CGFloat = 2
     static let shadowOpacity: CGFloat = 0.08
     static let defaultMaxValue: Int = 10
@@ -243,7 +242,8 @@ struct CounterView: View {
                 }
             }
         }
-        .padding(Constants.counterPadding)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
         .background(
             ZStack {
                 // Base surface
@@ -444,7 +444,7 @@ struct CountersOverlay: View {
                 .enhancedShadow(color: Color("AccentColor"), radius: 8, y: 4)
                 .padding(.trailing, 16)
             }
-            .padding(.top, counters.isEmpty ? 12 : 8)
+            .padding(.top, counters.isEmpty ? 8 : 4)
             .padding(.bottom, 8)
         }
     }
