@@ -50,7 +50,7 @@ struct ContentView: View {
                     set: { viewModel.updateCurrentProjectNotes($0) }
                 ),
                 bookmarks: Binding(
-                    get: { viewModel.bookmarks },
+                    get: { viewModel.currentProject?.bookmarks ?? [] },
                     set: { viewModel.updateCurrentProjectBookmarks($0) }
                 ),
                 counterCount: currentProject.counters.count,
@@ -195,7 +195,7 @@ struct ContentView: View {
             if viewModel.showBookmarkList {
                 BookmarkListView(
                     isPresented: $viewModel.showBookmarkList,
-                    bookmarks: viewModel.bookmarks,
+                    bookmarks: viewModel.currentProject?.bookmarks ?? [],
                     onSelectBookmark: { bookmark in
                         viewModel.navigateToBookmark(bookmark)
                     },

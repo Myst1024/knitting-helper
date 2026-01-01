@@ -13,12 +13,7 @@ import Combine
 class ProjectListViewModel: ObservableObject {
     @Published var projects: [Project] = []
     @Published var currentProject: Project?
-    @Published var bookmarks: [CodableBookmark] = []
     @Published var showNewProjectView = false
-
-    private func syncBookmarksWithCurrentProject() {
-        bookmarks = currentProject?.bookmarks ?? []
-    }
     @Published var shouldAddHighlight = false
     @Published var shouldAddNote = false
     @Published var showBookmarkDialog = false
@@ -105,7 +100,6 @@ class ProjectListViewModel: ObservableObject {
         
         withAnimation(.easeInOut(duration: 0.3)) {
             currentProject = updatedProject
-            bookmarks = updatedProject.bookmarks
         }
         
         // Initialize timer for the new project
@@ -283,7 +277,6 @@ class ProjectListViewModel: ObservableObject {
         Task { @MainActor in
             guard self.navigationState == .idle else { return }
             currentProject = current
-            self.bookmarks = bookmarks // Update the @Published property
             // Also update in projects array
             if let index = projects.firstIndex(where: { $0.id == current.id }) {
                 projects[index] = current
@@ -434,9 +427,6 @@ class ProjectListViewModel: ObservableObject {
             guard self.navigationState == .idle else { return }
             currentProject = projects[index]
 
-            // Update the @Published bookmarks property to trigger UI updates
-            bookmarks = currentProject?.bookmarks ?? []
-
             // Save changes
             do {
                 try Project.saveProjects(projects)
@@ -465,9 +455,6 @@ class ProjectListViewModel: ObservableObject {
         Task { @MainActor in
             guard self.navigationState == .idle else { return }
             currentProject = current
-
-            // Update the @Published bookmarks property to trigger UI updates
-            bookmarks = current.bookmarks
 
             // Also update in projects array
             if let index = projects.firstIndex(where: { $0.id == current.id }) {
