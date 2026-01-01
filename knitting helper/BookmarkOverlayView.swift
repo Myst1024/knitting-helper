@@ -42,7 +42,7 @@ class BookmarkOverlayView: UIView {
 
     // MARK: - View-backed bookmarks (faster incremental updates)
     /// Update visual subviews to match the provided model. This avoids full redraws.
-    func update(bookmarks newBookmarks: [BookmarkModel], canvas: PDFCanvasView?, onBookmarkMoved: @escaping (UUID, CGPoint) -> Void) {
+    func update(bookmarks newBookmarks: [BookmarkModel], canvas: PDFCanvasView?) {
         // Convert arrays to dict for quick lookup
         var newMap: [UUID: BookmarkModel] = [:]
         for b in newBookmarks { newMap[b.id] = b }
@@ -75,14 +75,6 @@ class BookmarkOverlayView: UIView {
             } else {
                 // Create new bookmark icon view
                 let view = BookmarkIconView(frame: frame, color: bookmark.color)
-                view.onPositionChanged = { [weak self] newCenter in
-                    guard let self = self else { return }
-                    // Convert center to canvas coordinates
-                    if let canvas = canvas {
-                        let canvasPoint = self.convert(newCenter, to: canvas)
-                        onBookmarkMoved(bookmark.id, canvasPoint)
-                    }
-                }
                 addSubview(view)
                 bookmarkIconViews[bookmark.id] = view
             }
@@ -93,12 +85,11 @@ class BookmarkOverlayView: UIView {
     }
 }
 
-/// Lightweight view representing a single bookmark icon. The icon is movable and tappable.
+/// Lightweight view representing a single bookmark icon. The icon is tappable.
+/// Dragging is handled by the PDFViewCoordinator.
 class BookmarkIconView: UIView {
     private let iconImageView = UIImageView()
     private var bookmarkColor: UIColor = .systemOrange
-    private var panGesture: UIPanGestureRecognizer?
-    var onPositionChanged: ((CGPoint) -> Void)?
 
     init(frame: CGRect, color: UIColor = .systemOrange) {
         self.bookmarkColor = color
@@ -156,25 +147,8 @@ class BookmarkIconView: UIView {
         layer.shadowOffset = CGSize(width: 0, height: 2)
         layer.shadowRadius = 4
         layer.shadowOpacity = 1.0
-
-        // Add pan gesture for dragging
-        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        addGestureRecognizer(panGesture)
-        self.panGesture = panGesture
     }
 
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        switch gesture.state {
-        case .changed:
-            let translation = gesture.translation(in: superview)
-            center = CGPoint(x: center.x + translation.x, y: center.y + translation.y)
-            gesture.setTranslation(.zero, in: superview)
-        case .ended:
-            onPositionChanged?(center)
-        default:
-            break
-        }
-    }
 
     func setColor(_ color: UIColor) {
         bookmarkColor = color

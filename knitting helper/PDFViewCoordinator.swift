@@ -66,12 +66,15 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     private var isDragging = false
     private var isResizing = false
     private var isDraggingNote = false
+    private var isDraggingBookmark = false
     private var isResizingNoteEditor = false
     private var resizingEdge: ResizeEdge?
     private var dragStartPointInCanvas: CGPoint?
     private var dragStartRect: CGRect?
     private var noteDragStartPoint: CGPoint?
     private var noteDragStartModel: NoteModel?
+    private var bookmarkDragStartPoint: CGPoint?
+    private var bookmarkDragStartModel: BookmarkModel?
     private var noteEditorResizeStartPoint: CGPoint?
     private var noteEditorResizeStartSize: CGSize?
     private var noteEditorResizeStartOrigin: CGPoint?
@@ -161,6 +164,16 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             y: point.y - PDFConstants.noteIconSize / 2 - PDFConstants.noteIconTapHitSlop,
             width: PDFConstants.noteIconSize + PDFConstants.noteIconTapHitSlop * 2,
             height: PDFConstants.noteIconSize + PDFConstants.noteIconTapHitSlop * 2
+        )
+    }
+
+    /// Calculates the hit area for a bookmark icon at a given point
+    private func bookmarkIconHitArea(at point: CGPoint) -> CGRect {
+        return CGRect(
+            x: point.x - PDFConstants.bookmarkIconSize / 2 - PDFConstants.noteIconTapHitSlop,
+            y: point.y - PDFConstants.bookmarkIconSize / 2 - PDFConstants.noteIconTapHitSlop,
+            width: PDFConstants.bookmarkIconSize + PDFConstants.noteIconTapHitSlop * 2,
+            height: PDFConstants.bookmarkIconSize + PDFConstants.noteIconTapHitSlop * 2
         )
     }
     
@@ -272,9 +285,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 color: UIColor(hex: codable.colorHex) ?? .systemOrange
             )
         }
-        bookmarkOverlay.update(bookmarks: models, canvas: canvasView) { [weak self] bookmarkID, canvasPoint in
-            self?.updateBookmarkPosition(bookmarkID: bookmarkID, to: canvasPoint)
-        }
+        bookmarkOverlay.update(bookmarks: models, canvas: canvasView)
     }
 
     // Highlight Persistence
@@ -617,6 +628,21 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                     }
                 }
             }
+
+            // Check for bookmark drag
+            if !foundHandle, bookmarkOverlayView != nil {
+                for bookmark in bookmarks {
+                    let bookmarkPoint = bookmark.point(in: canvas)
+                    if bookmarkIconHitArea(at: bookmarkPoint).contains(location) {
+                        isDraggingBookmark = true
+                        bookmarkDragStartPoint = location
+                        bookmarkDragStartModel = bookmark
+                        foundHandle = true
+                        if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = false }
+                        break
+                    }
+                }
+            }
             
             if !foundHandle {
                 for h in highlights {
@@ -709,6 +735,25 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                         self?.updateNoteEditorPosition(for: draggedNoteID)
                     }
                 }
+            } else if isDraggingBookmark {
+                guard let startPoint = bookmarkDragStartPoint, let startModel = bookmarkDragStartModel else { return }
+                guard let canvas = canvasView else { return }
+
+                // Ensure canvas is laid out
+                if canvas.pageFrames.isEmpty {
+                    layoutCanvas()
+                }
+
+                let dx = location.x - startPoint.x
+                let dy = location.y - startPoint.y
+                let currentPoint = startModel.point(in: canvas)
+                let newPoint = CGPoint(
+                    x: max(0, min(canvas.bounds.width, currentPoint.x + dx)),
+                    y: max(0, min(canvas.bounds.height, currentPoint.y + dy))
+                )
+                let (page, xFrac, yFrac) = canvasPointToPageFraction(newPoint)
+                updateBookmarkPosition(bookmarkID: startModel.id, to: newPoint)
+                syncBookmarkOverlay()
             } else {
                 guard let startPoint = dragStartPointInCanvas, let startRect = dragStartRect, let selectedID = selectedHighlightID else { return }
                 guard isDragging || isResizing else { return }
@@ -756,6 +801,11 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 isDraggingNote = false
                 noteDragStartPoint = nil
                 noteDragStartModel = nil
+            } else if isDraggingBookmark {
+                // Bookmark position is already updated via updateBookmarkPosition
+                isDraggingBookmark = false
+                bookmarkDragStartPoint = nil
+                bookmarkDragStartModel = nil
             } else {
                 syncHighlightsToBinding()
             }
@@ -878,6 +928,15 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             }) {
                 return true
             }
+
+            // Check for bookmark drag
+            if bookmarks.contains(where: { bookmark in
+                let bookmarkPoint = bookmark.point(in: canvas)
+                return bookmarkIconHitArea(at: bookmarkPoint).contains(loc)
+            }) {
+                return true
+            }
+
             // Check for highlight drag/resize
             return highlights.contains { h in
                 let rect = h.rect(in: canvas)
