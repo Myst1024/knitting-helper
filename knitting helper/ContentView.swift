@@ -237,6 +237,14 @@ struct ContentView: View {
                 }
                 .ignoresSafeArea(.container, edges: .bottom)
                 .dismissKeyboardOnTap()
+                .onAppear {
+                    // Disable idle timer when viewing a project to keep screen on
+                    UIApplication.shared.isIdleTimerDisabled = true
+                }
+                .onDisappear {
+                    // Re-enable idle timer when leaving project view
+                    UIApplication.shared.isIdleTimerDisabled = false
+                }
                 .transition(.asymmetric(
                     insertion: .move(edge: .trailing),
                     removal: .move(edge: .trailing)
@@ -246,7 +254,7 @@ struct ContentView: View {
                     // Subtle background gradient
                     LinearGradient.backgroundSubtle
                         .ignoresSafeArea()
-                    
+
                     ProjectListView(
                         projects: viewModel.projects,
                         onOpenProject: { viewModel.openProject($0) },
@@ -254,6 +262,10 @@ struct ContentView: View {
                         onDeleteProject: { viewModel.prepareDelete($0) },
                         onCreateProject: { viewModel.showNewProjectView = true }
                     )
+                }
+                .onAppear {
+                    // Enable idle timer on home screen to allow normal screen sleep
+                    UIApplication.shared.isIdleTimerDisabled = false
                 }
                 .transition(.asymmetric(
                     insertion: .move(edge: .leading),
