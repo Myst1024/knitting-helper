@@ -136,8 +136,11 @@ struct CounterView: View {
                 // Repeat button (when at max) or Increment button
                 if isAtMax {
                     Button(action: {
-                        counter.value = 0
-                        counter.reps += 1
+                        // Reset counter and increment reps
+                        var newCounter = counter
+                        newCounter.value = 0
+                        newCounter.reps += 1
+                        counter = newCounter
                     }) {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.counterclockwise")
