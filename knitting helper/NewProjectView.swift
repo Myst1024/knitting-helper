@@ -34,18 +34,15 @@ struct NewProjectView: View {
                 VStack(spacing: 24) {
                     // Icon
                     ZStack {
-                        // Outer glow effect
                         Circle()
                             .fill(LinearGradient.rainbowSubtle)
                             .frame(width: 110, height: 110)
                             .blur(radius: 8)
-                        
-                        // Main circle with gradient
+
                         Circle()
                             .fill(LinearGradient.accent)
                             .frame(width: 100, height: 100)
-                        
-                        // Inner highlight
+
                         Circle()
                             .fill(
                                 LinearGradient(
@@ -92,18 +89,15 @@ struct NewProjectView: View {
                         } label: {
                             HStack(spacing: 14) {
                                 ZStack {
-                                    // Outer glow
                                     Circle()
                                         .fill(LinearGradient.accentSecondaryLight)
                                         .frame(width: 50, height: 50)
                                         .blur(radius: 4)
-                                    
-                                    // Main circle
+
                                     Circle()
                                         .fill(LinearGradient.accentSecondary)
                                         .frame(width: 44, height: 44)
-                                    
-                                    // Inner highlight
+
                                     Circle()
                                         .fill(
                                             LinearGradient(

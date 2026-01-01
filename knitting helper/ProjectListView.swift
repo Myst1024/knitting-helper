@@ -192,7 +192,7 @@ struct ProjectCard: View {
                         // Outer glow
                         Circle()
                             .fill(cardGradient)
-                            .frame(width: 56, height: 56)
+                            .frame(width: 56, height: 53)
                             .blur(radius: 4)
 
                         // Main circle

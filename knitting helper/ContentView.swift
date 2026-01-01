@@ -24,8 +24,6 @@ struct ContentView: View {
     // Bookmark creation trigger (holds the name when creating)
     @State private var bookmarkNameToCreate: String? = nil
 
-    // Bookmark creation handler
-    
     // MARK: - PDF Viewer Section
     private var pdfViewerSection: some View {
         guard let currentProject = viewModel.currentProject else {
@@ -105,17 +103,14 @@ struct ContentView: View {
             
             // Toolbar (fixed at bottom)
             HStack(spacing: 16) {
-                // Highlight button
                 Button {
                     viewModel.shouldAddHighlight = true
                 } label: {
                     ZStack {
-                        // Main circle
                         Circle()
                             .fill(LinearGradient.accent)
                             .frame(width: 44, height: 44)
-                        
-                        // Inner highlight
+
                         Circle()
                             .fill(
                                 LinearGradient(
@@ -125,7 +120,7 @@ struct ContentView: View {
                                 )
                             )
                             .frame(width: 44, height: 44)
-                        
+
                         Image(systemName: "pencil.tip.crop.circle.badge.plus")
                             .font(.system(size: 24, weight: .semibold))
                             .foregroundColor(.white)
@@ -133,18 +128,15 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
-                
-                // Note button
+
                 Button {
                     viewModel.shouldAddNote = true
                 } label: {
                     ZStack {
-                        // Main circle
                         Circle()
                             .fill(LinearGradient.accent)
                             .frame(width: 44, height: 44)
 
-                        // Inner highlight
                         Circle()
                             .fill(
                                 LinearGradient(
@@ -162,19 +154,15 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
-                
-                // Bookmark button
+
                 Button {
                     viewModel.showBookmarkList = true
                 } label: {
                     ZStack {
-
-                        // Main circle
                         Circle()
                             .fill(LinearGradient.accent)
                             .frame(width: 44, height: 44)
 
-                        // Inner highlight
                         Circle()
                             .fill(
                                 LinearGradient(

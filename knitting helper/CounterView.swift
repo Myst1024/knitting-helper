@@ -105,7 +105,7 @@ struct CounterView: View {
             
             // Middle row: value and reps (if applicable)
             HStack(spacing: 10) {
-                // Reset button (moved to left)
+                // Reset button
                 Button(action: {
                     counter.value = 0
                 }) {
@@ -173,8 +173,7 @@ struct CounterView: View {
                         .background(
                             ZStack {
                                 LinearGradient.accent
-                                
-                                // Inner highlight
+
                                 LinearGradient(
                                     colors: [Color.white.opacity(0.2), Color.clear],
                                     startPoint: .topLeading,
@@ -417,18 +416,15 @@ struct CountersOverlay: View {
                 
                 Button(action: onAddCounter) {
                     ZStack {
-                        // Outer glow
                         Circle()
                             .fill(LinearGradient.accentLight)
                             .frame(width: 36, height: 36)
                             .blur(radius: 4)
-                        
-                        // Main circle
+
                         Circle()
                             .fill(LinearGradient.accent)
                             .frame(width: 32, height: 32)
-                        
-                        // Inner highlight
+
                         Circle()
                             .fill(
                                 LinearGradient(
