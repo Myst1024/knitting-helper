@@ -328,6 +328,21 @@ struct ProjectCard: View {
         }
     }
     
+    private func formatTimerTime(_ seconds: Double) -> String {
+        let totalSeconds = Int(seconds)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let secs = totalSeconds % 60
+        
+        if hours > 0 {
+            return String(format: "%dh %dm", hours, minutes)
+        } else if minutes > 0 {
+            return String(format: "%dm %ds", minutes, secs)
+        } else {
+            return String(format: "%ds", secs)
+        }
+    }
+    
     var body: some View {
         HStack(spacing: 0) {
             Button(action: onOpen) {
@@ -365,9 +380,31 @@ struct ProjectCard: View {
                             .font(.headline)
                             .foregroundColor(Color("AppText"))
                         
-                        Text("\(project.counters.count) counters")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            Text("\(project.counters.count) counter\(project.counters.count == 1 ? "" : "s")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            if project.notes.count > 0 {
+                                Text("•")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Text("\(project.notes.count) note\(project.notes.count == 1 ? "" : "s")")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            if project.timerElapsedSeconds > 0 {
+                                Text("•")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Text(formatTimerTime(project.timerElapsedSeconds))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                     
                     Spacer()
