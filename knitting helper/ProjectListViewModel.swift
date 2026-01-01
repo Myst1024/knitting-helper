@@ -456,7 +456,7 @@ class ProjectListViewModel: ObservableObject {
             xFraction: xFraction,
             yFraction: yFraction,
             name: name,
-            colorHex: UIColor.systemOrange.toHex()
+            colorHex: UIColor.systemGreen.toHex()
         )
 
         current.bookmarks.append(bookmark)

@@ -110,12 +110,6 @@ struct ContentView: View {
                     viewModel.shouldAddHighlight = true
                 } label: {
                     ZStack {
-                        // Outer glow
-                        Circle()
-                            .fill(LinearGradient.accent)
-                            .frame(width: 48, height: 48)
-                            .blur(radius: 6)
-                        
                         // Main circle
                         Circle()
                             .fill(LinearGradient.accent)
@@ -132,8 +126,8 @@ struct ContentView: View {
                             )
                             .frame(width: 44, height: 44)
                         
-                        Image(systemName: "highlighter")
-                            .font(.system(size: 18, weight: .semibold))
+                        Image(systemName: "pencil.tip.crop.circle.badge.plus")
+                            .font(.system(size: 24, weight: .semibold))
                             .foregroundColor(.white)
                     }
                 }
@@ -145,17 +139,11 @@ struct ContentView: View {
                     viewModel.shouldAddNote = true
                 } label: {
                     ZStack {
-                        // Outer glow
-                        Circle()
-                            .fill(LinearGradient.accentWarmLight)
-                            .frame(width: 48, height: 48)
-                            .blur(radius: 6)
-                        
                         // Main circle
                         Circle()
-                            .fill(LinearGradient.accentWarm)
+                            .fill(LinearGradient.accent)
                             .frame(width: 44, height: 44)
-                        
+
                         // Inner highlight
                         Circle()
                             .fill(
@@ -166,7 +154,7 @@ struct ContentView: View {
                                 )
                             )
                             .frame(width: 44, height: 44)
-                        
+
                         Image(systemName: "square.and.pencil")
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(.white)
@@ -180,17 +168,12 @@ struct ContentView: View {
                     viewModel.showBookmarkList = true
                 } label: {
                     ZStack {
-                        // Outer glow
-                        Circle()
-                            .fill(LinearGradient.accentWarmLight)
-                            .frame(width: 48, height: 48)
-                            .blur(radius: 6)
-                        
+
                         // Main circle
                         Circle()
-                            .fill(LinearGradient.accentWarm)
+                            .fill(LinearGradient.accent)
                             .frame(width: 44, height: 44)
-                        
+
                         // Inner highlight
                         Circle()
                             .fill(
@@ -201,14 +184,14 @@ struct ContentView: View {
                                 )
                             )
                             .frame(width: 44, height: 44)
-                        
+
                         Image(systemName: "bookmark.fill")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
                     }
                 }
                 .buttonStyle(.plain)
-                .enhancedShadow(color: Color("AccentWarm"), radius: 12, y: 6)
+                .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
                 
                 Spacer()
             }
