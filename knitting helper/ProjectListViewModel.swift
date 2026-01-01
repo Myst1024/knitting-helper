@@ -157,10 +157,13 @@ class ProjectListViewModel: ObservableObject {
     func updateCurrentProjectScrollOffset(_ offset: Double) {
         guard var current = currentProject else { return }
         current.scrollOffsetY = offset
-        currentProject = current
-        // Also update in projects array
-        if let index = projects.firstIndex(where: { $0.id == current.id }) {
-            projects[index] = current
+        // Defer updates to avoid publishing during view updates
+        Task { @MainActor in
+            currentProject = current
+            // Also update in projects array
+            if let index = projects.firstIndex(where: { $0.id == current.id }) {
+                projects[index] = current
+            }
         }
     }
     

@@ -95,7 +95,7 @@ class TimerViewModel: ObservableObject {
     private func startTimer() {
         stopTimer()
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.updateElapsedTime()
             }
         }
@@ -120,7 +120,7 @@ class TimerViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.handleAppWillResignActive()
             }
         }
@@ -130,7 +130,7 @@ class TimerViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.handleAppDidBecomeActive()
             }
         }
@@ -171,7 +171,7 @@ class TimerViewModel: ObservableObject {
     private func startPeriodicSave() {
         // Save every 30 seconds to prevent data loss
         saveTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.saveTimerState()
             }
         }

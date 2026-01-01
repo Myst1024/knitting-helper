@@ -478,7 +478,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         }
         
         // Check for note tap
-        if let noteOverlay = noteOverlayView {
+        if noteOverlayView != nil {
             for note in notes {
                 let notePoint = note.point(in: canvas)
                 if noteIconHitArea(at: notePoint).contains(location) {
@@ -546,7 +546,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             }
             
             // Check for note drag
-            if !foundHandle, let noteOverlay = noteOverlayView {
+            if !foundHandle, noteOverlayView != nil {
                 for note in notes {
                     let notePoint = note.point(in: canvas)
                     if noteIconHitArea(at: notePoint).contains(location) {
