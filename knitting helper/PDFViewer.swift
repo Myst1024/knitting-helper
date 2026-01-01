@@ -13,13 +13,20 @@ struct PDFViewer: View {
     let url: URL
     @Binding var shouldAddHighlight: Bool
     @Binding var shouldAddNote: Bool
+    @Binding var bookmarkName: String
+    var onCreateBookmark: (String, Int, CGFloat, CGFloat) -> Void
     @Binding var highlights: [CodableHighlight]
     @Binding var notes: [CodableNote]
+    @Binding var bookmarks: [CodableBookmark]
     let counterCount: Int
     @Binding var scrollOffsetY: Double
-    
+    @Binding var selectedBookmark: CodableBookmark?
+    @Binding var bookmarkToRecolor: CodableBookmark?
+    @Binding var shouldShowBookmarkColorPicker: Bool
+    @Binding var bookmarkNameToCreate: String?
+
     var body: some View {
-        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, shouldAddNote: $shouldAddNote, highlights: $highlights, notes: $notes, counterCount: counterCount, scrollOffsetY: $scrollOffsetY)
+        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, shouldAddNote: $shouldAddNote, bookmarkName: $bookmarkName, onCreateBookmark: onCreateBookmark, highlights: $highlights, notes: $notes, bookmarks: $bookmarks, counterCount: counterCount, scrollOffsetY: $scrollOffsetY, selectedBookmark: $selectedBookmark, bookmarkToRecolor: $bookmarkToRecolor, shouldShowBookmarkColorPicker: $shouldShowBookmarkColorPicker, bookmarkNameToCreate: $bookmarkNameToCreate)
     }
 }
 
@@ -27,11 +34,18 @@ struct PDFKitView: UIViewRepresentable {
     let url: URL
     @Binding var shouldAddHighlight: Bool
     @Binding var shouldAddNote: Bool
+    @Binding var bookmarkName: String
+    var onCreateBookmark: (String, Int, CGFloat, CGFloat) -> Void
     @Binding var highlights: [CodableHighlight]
     @Binding var notes: [CodableNote]
+    @Binding var bookmarks: [CodableBookmark]
     let counterCount: Int
     @Binding var scrollOffsetY: Double
-    
+    @Binding var selectedBookmark: CodableBookmark?
+    @Binding var bookmarkToRecolor: CodableBookmark?
+    @Binding var shouldShowBookmarkColorPicker: Bool
+    @Binding var bookmarkNameToCreate: String?
+
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
         scrollView.minimumZoomScale = PDFConstants.minimumZoomScale
@@ -89,6 +103,14 @@ struct PDFKitView: UIViewRepresentable {
         context.coordinator.noteOverlayView = noteOverlay
         noteOverlay.isUserInteractionEnabled = true
         contentView.bringSubviewToFront(noteOverlay)
+
+        // Overlay for bookmarks (drawn in canvas coordinate space)
+        let bookmarkOverlay = BookmarkOverlayView()
+        bookmarkOverlay.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(bookmarkOverlay)
+        context.coordinator.bookmarkOverlayView = bookmarkOverlay
+        bookmarkOverlay.isUserInteractionEnabled = true
+        contentView.bringSubviewToFront(bookmarkOverlay)
         
         // Allow the canvas to be centered vertically inside contentView when it's shorter than the scroll view
         NSLayoutConstraint.activate([
@@ -108,7 +130,13 @@ struct PDFKitView: UIViewRepresentable {
             noteOverlay.leadingAnchor.constraint(equalTo: canvas.leadingAnchor),
             noteOverlay.trailingAnchor.constraint(equalTo: canvas.trailingAnchor),
             noteOverlay.topAnchor.constraint(equalTo: canvas.topAnchor),
-            noteOverlay.bottomAnchor.constraint(equalTo: canvas.bottomAnchor)
+            noteOverlay.bottomAnchor.constraint(equalTo: canvas.bottomAnchor),
+
+            // Pin bookmark overlay to the canvas as well
+            bookmarkOverlay.leadingAnchor.constraint(equalTo: canvas.leadingAnchor),
+            bookmarkOverlay.trailingAnchor.constraint(equalTo: canvas.trailingAnchor),
+            bookmarkOverlay.topAnchor.constraint(equalTo: canvas.topAnchor),
+            bookmarkOverlay.bottomAnchor.constraint(equalTo: canvas.bottomAnchor)
         ])
         
         // Gesture recognizers attached to scrollView (for tap/pan on highlights and notes)
@@ -131,6 +159,12 @@ struct PDFKitView: UIViewRepresentable {
             context.coordinator.layoutCanvas()
             context.coordinator.syncOverlay()
             context.coordinator.syncNoteOverlay()
+            context.coordinator.syncBookmarkOverlay()
+
+            // Set up bookmark creation callback
+            context.coordinator.onCreateBookmark = { name, page, xFraction, yFraction in
+                onCreateBookmark(name, page, xFraction, yFraction)
+            }
         }
         
         return scrollView
@@ -166,28 +200,45 @@ struct PDFKitView: UIViewRepresentable {
             context.coordinator.addNoteAtCenter()
             DispatchQueue.main.async { shouldAddNote = false }
         }
-        
+
+        // Add bookmark at center when requested
+        if let bookmarkName = bookmarkNameToCreate {
+            context.coordinator.addBookmarkAtCenter(name: bookmarkName)
+            DispatchQueue.main.async {
+                bookmarkNameToCreate = nil
+            }
+        }
+
+        // Show color picker for bookmark recoloring when requested
+        if shouldShowBookmarkColorPicker, let bookmark = bookmarkToRecolor {
+            context.coordinator.showColorPicker(for: bookmark)
+            DispatchQueue.main.async {
+                shouldShowBookmarkColorPicker = false
+                bookmarkToRecolor = nil
+            }
+        }
+
         // Update notes when they change (compare by ID and count)
         // Only load notes from binding if coordinator doesn't have them (prevents overwriting notes added by coordinator)
         let coordinatorNotes = context.coordinator.getNotes()
-        
+
         // If coordinator has more notes than binding, coordinator is the source of change - don't overwrite
         if coordinatorNotes.count > notes.count {
             // Coordinator just added notes, don't load from binding
             return
         }
-        
+
         // If coordinator has fewer notes than binding, coordinator deleted notes - don't reload from binding
         if coordinatorNotes.count < notes.count {
             // Coordinator just deleted notes, sync overlay but don't reload from binding
             context.coordinator.syncNoteOverlay()
             return
         }
-        
+
         // If binding has notes that coordinator doesn't have, load them (external changes)
         let coordinatorNoteIDs = Set(coordinatorNotes.map { $0.id })
         let bindingNoteIDs = Set(notes.map { $0.id })
-        
+
         if !bindingNoteIDs.isSubset(of: coordinatorNoteIDs) {
             // Binding has new notes from external source, load them
             context.coordinator.loadNotes(notes)
@@ -196,6 +247,10 @@ struct PDFKitView: UIViewRepresentable {
             // Counts differ but no new IDs - might be a deletion, sync overlay
             context.coordinator.syncNoteOverlay()
         }
+
+        // Update bookmark overlay when bookmarks change
+        // Pass bookmarks directly to avoid binding issues
+        context.coordinator.syncBookmarkOverlay(bookmarks)
 
         // If the URL/document changed, replace the document and clear cached images
         if context.coordinator.document?.documentURL != url {
@@ -217,10 +272,20 @@ struct PDFKitView: UIViewRepresentable {
             context.coordinator.layoutCanvas()
             context.coordinator.syncOverlay()
             context.coordinator.syncNoteOverlay()
+            context.coordinator.syncBookmarkOverlay()
+        }
+
+        // Handle bookmark navigation
+        if let bookmark = selectedBookmark {
+            context.coordinator.navigateToBookmark(bookmark)
+            // Reset the selected bookmark after navigation
+            DispatchQueue.main.async {
+                selectedBookmark = nil
+            }
         }
     }
     
     func makeCoordinator() -> PDFViewCoordinator {
-        PDFViewCoordinator(url: url, highlights: $highlights, notes: $notes, scrollOffsetY: $scrollOffsetY)
+        PDFViewCoordinator(url: url, highlights: $highlights, notes: $notes, bookmarks: $bookmarks, bookmarkName: $bookmarkName, scrollOffsetY: $scrollOffsetY, selectedBookmark: $selectedBookmark, bookmarkToRecolor: $bookmarkToRecolor, shouldShowBookmarkColorPicker: $shouldShowBookmarkColorPicker)
     }
 }

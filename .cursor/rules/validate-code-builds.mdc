@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+## running a build:
+- xcodebuild -project "knitting helper.xcodeproj" -scheme "knitting helper" -configuration Debug -sdk iphonesimulator clean build | tee xcodebuild.log
+
+Notes:
+- ALWAYS run a build and confirm no errors are present before declaring that code is ready.
+  - Do not ask for permission to run the build, just do it and iterate on any errors until it is fixed

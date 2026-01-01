@@ -20,572 +20,402 @@ private enum Constants {
 
 struct ContentView: View {
     @StateObject private var viewModel = ProjectListViewModel()
+
+    // Bookmark creation trigger (holds the name when creating)
+    @State private var bookmarkNameToCreate: String? = nil
+
+    // Bookmark creation handler
     
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                if let project = viewModel.currentProject {
-                    ZStack {
-                        // PDF Viewer
-                        PDFViewer(
-                            url: project.pdfURL,
-                            shouldAddHighlight: $viewModel.shouldAddHighlight,
-                            shouldAddNote: $viewModel.shouldAddNote,
-                            highlights: Binding(
-                                get: { viewModel.currentProject?.highlights ?? [] },
-                                set: { viewModel.updateCurrentProjectHighlights($0) }
-                            ),
-                            notes: Binding(
-                                get: { viewModel.currentProject?.notes ?? [] },
-                                set: { viewModel.updateCurrentProjectNotes($0) }
-                            ),
-                            counterCount: project.counters.count,
-                            scrollOffsetY: Binding(
-                                get: { viewModel.currentProject?.scrollOffsetY ?? 0 },
-                                set: { viewModel.updateCurrentProjectScrollOffset($0) }
-                            )
-                        )
-                        .edgesIgnoringSafeArea(.bottom)
-                        .onAppear {
-                            // Initialize timer when project view appears
-                            if viewModel.timerViewModel == nil {
-                                viewModel.initializeTimer(for: project)
-                            }
-                        }
-                        
-                        VStack {
-                            // Timer overlay (if visible) - above counters
-                            if viewModel.showTimer, let timerVM = viewModel.timerViewModel {
-                                TimerView(timerViewModel: timerVM)
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, 8)
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                            }
-                            
-                            // Counters overlay (fixed at top)
-                            CountersOverlay(
-                                counters: Binding(
-                                    get: { viewModel.currentProject?.counters ?? [] },
-                                    set: { viewModel.updateCurrentProjectCounters($0) }
-                                ),
-                                onAddCounter: {
-                                    var transaction = Transaction()
-                                    transaction.disablesAnimations = true
-                                    withTransaction(transaction) {
-                                        viewModel.addCounterToCurrentProject()
-                                    }
-                                }
-                            )
-                            
-                            Spacer()
-                            
-                            // Action buttons (bottom left)
-                            HStack(spacing: 12) {
-                                // Highlight button
-                                Button {
-                                    viewModel.shouldAddHighlight = true
-                                } label: {
-                                    ZStack {
-                                        // Outer glow
-                                        Circle()
-                                            .fill(LinearGradient.accentWarmLight)
-                                            .frame(width: 48, height: 48)
-                                            .blur(radius: 6)
-                                        
-                                        // Main circle
-                                        Circle()
-                                            .fill(LinearGradient.accentWarm)
-                                            .frame(width: 44, height: 44)
-                                        
-                                        // Inner highlight
-                                        Circle()
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [Color.white.opacity(0.3), Color.clear],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .center
-                                                )
-                                            )
-                                            .frame(width: 44, height: 44)
-                                        
-                                        Image(systemName: "pencil.tip.crop.circle.badge.plus")
-                                            .font(.system(size: 24, weight: .semibold))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .enhancedShadow(color: Color("AccentWarm"), radius: 12, y: 6)
-                                
-                                // Add Note button
-                                Button {
-                                    viewModel.shouldAddNote = true
-                                } label: {
-                                    ZStack {
-                                        // Outer glow
-                                        Circle()
-                                            .fill(LinearGradient.accentLight)
-                                            .frame(width: 48, height: 48)
-                                            .blur(radius: 6)
-                                        
-                                        // Main circle
-                                        Circle()
-                                            .fill(LinearGradient.accent)
-                                            .frame(width: 44, height: 44)
-                                        
-                                        // Inner highlight
-                                        Circle()
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: [Color.white.opacity(0.3), Color.clear],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .center
-                                                )
-                                            )
-                                            .frame(width: 44, height: 44)
-                                        
-                                        Image(systemName: "square.and.pencil")
-                                            .font(.system(size: 20, weight: .semibold))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
-                                
-                                Spacer()
-                            }
-                            .padding(.leading, 16)
-                            .padding(.bottom, UIHelper.safeAreaBottomInset() + 16)
-                        }
-                        .zIndex(1)
-                    }
-                    .ignoresSafeArea(.container, edges: .bottom)
-                    .dismissKeyboardOnTap()
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing),
-                        removal: .move(edge: .trailing)
-                    ))
-                } else {
-                    ZStack {
-                        // Subtle background gradient
-                        LinearGradient.backgroundSubtle
-                            .ignoresSafeArea()
-                        
-                        ProjectListView(
-                            projects: viewModel.projects,
-                            onOpenProject: { viewModel.openProject($0) },
-                            onRenameProject: { viewModel.prepareRename($0) },
-                            onDeleteProject: { viewModel.prepareDelete($0) },
-                            onCreateProject: { viewModel.showNewProjectView = true }
-                        )
-                    }
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .leading),
-                        removal: .move(edge: .leading)
-                    ))
+    // MARK: - PDF Viewer Section
+    private var pdfViewerSection: some View {
+        guard let currentProject = viewModel.currentProject else {
+            // This should never happen since pdfViewerSection is only displayed when currentProject != nil,
+            // but we guard against it for safety during animation transitions
+            return AnyView(EmptyView())
+        }
+
+        return AnyView(
+            PDFViewer(
+                url: currentProject.pdfURL,
+                shouldAddHighlight: $viewModel.shouldAddHighlight,
+                shouldAddNote: $viewModel.shouldAddNote,
+                bookmarkName: $viewModel.bookmarkName,
+                onCreateBookmark: { name, page, xFraction, yFraction in
+                    viewModel.createBookmark(name: name, page: page, xFraction: xFraction, yFraction: yFraction)
+                },
+                highlights: Binding(
+                    get: { viewModel.currentProject?.highlights ?? [] },
+                    set: { viewModel.updateCurrentProjectHighlights($0) }
+                ),
+                notes: Binding(
+                    get: { viewModel.currentProject?.notes ?? [] },
+                    set: { viewModel.updateCurrentProjectNotes($0) }
+                ),
+                bookmarks: Binding(
+                    get: { viewModel.bookmarks },
+                    set: { viewModel.updateCurrentProjectBookmarks($0) }
+                ),
+                counterCount: currentProject.counters.count,
+                scrollOffsetY: Binding(
+                    get: { viewModel.currentProject?.scrollOffsetY ?? 0 },
+                    set: { viewModel.updateCurrentProjectScrollOffset($0) }
+                ),
+                selectedBookmark: $viewModel.selectedBookmark,
+                bookmarkToRecolor: $viewModel.bookmarkToRecolor,
+                shouldShowBookmarkColorPicker: $viewModel.shouldShowBookmarkColorPicker,
+                bookmarkNameToCreate: $bookmarkNameToCreate
+            )
+            .edgesIgnoringSafeArea(.bottom)
+            .onAppear {
+                // Initialize timer when project view appears
+                if viewModel.timerViewModel == nil {
+                    viewModel.initializeTimer(for: currentProject)
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: viewModel.currentProject?.id)
-            .navigationTitle(viewModel.currentProject?.name ?? "Knitting Helper")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if viewModel.currentProject != nil {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
-                            viewModel.closeProject()
-                        } label: {
-                            Image(systemName: "house.fill")
-                                .foregroundStyle(LinearGradient.accent)
-                        }
-                    }
-                    
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        TimerToolbarButton(
-                            showTimer: viewModel.showTimer,
-                            timerViewModel: viewModel.timerViewModel,
-                            onToggle: { viewModel.toggleTimer() }
-                        )
+        )
+    }
+    
+    // MARK: - Overlays Section
+    private var overlaysSection: some View {
+        VStack {
+            // Timer overlay (if visible) - above counters
+            if viewModel.showTimer, let timerVM = viewModel.timerViewModel {
+                TimerView(timerViewModel: timerVM)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            
+            // Counters overlay (fixed at top)
+            CountersOverlay(
+                counters: Binding(
+                    get: { viewModel.currentProject?.counters ?? [] },
+                    set: { viewModel.updateCurrentProjectCounters($0) }
+                ),
+                onAddCounter: {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        viewModel.addCounterToCurrentProject()
                     }
                 }
-            }
-            .sheet(isPresented: $viewModel.showNewProjectView) {
-                NewProjectView(project: Binding(
-                    get: { nil },
-                    set: { newProject in
-                        if let newProject = newProject {
-                            viewModel.addProject(newProject)
-                        }
-                    }
-                ))
-            }
-            .alert("Delete Project?", isPresented: $viewModel.showDeleteConfirmation, presenting: viewModel.projectToDelete) { project in
-                Button("Cancel", role: .cancel) {
-                    viewModel.clearDeleteState()
-                }
-                Button("Delete", role: .destructive) {
-                    viewModel.deleteProject(project)
-                    viewModel.clearDeleteState()
-                }
-            } message: { project in
-                Text("Are you sure you want to delete \"\(project.name)\"? This action cannot be undone.")
-            }
-            .alert("Rename Project", isPresented: $viewModel.showRenameDialog, presenting: viewModel.projectToRename) { project in
-                TextField("Project Name", text: $viewModel.newProjectName)
-                Button("Cancel", role: .cancel) {
-                    viewModel.clearRenameState()
-                }
-                Button("Rename") {
-                    viewModel.renameProject(project, to: viewModel.newProjectName)
-                    viewModel.clearRenameState()
-                }
-                .disabled(viewModel.newProjectName.trimmingCharacters(in: .whitespaces).isEmpty)
-            } message: { project in
-                Text("Enter a new name for \"\(project.name)\"")
-            }
-        }
-    }
-}
-
-// MARK: - Supporting Views
-
-struct TimerToolbarButton: View {
-    let showTimer: Bool
-    let timerViewModel: TimerViewModel?
-    let onToggle: () -> Void
-    
-    private var iconName: String {
-        if let timerVM = timerViewModel, timerVM.isRunning {
-            return "stopwatch.fill"
-        } else if showTimer {
-            return "stopwatch.fill"
-        } else {
-            return "stopwatch"
-        }
-    }
-    
-    private var isRunning: Bool {
-        timerViewModel?.isRunning ?? false
-    }
-    
-    var body: some View {
-        Button(action: onToggle) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: iconName)
-                    .foregroundStyle(
-                        isRunning ?
-                            LinearGradient.accent :
-                            LinearGradient(
-                                colors: [
-                                    Color("AccentColor").opacity(0.6),
-                                    Color("AccentColor").opacity(0.45)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                    )
-                
-                // Static indicator dot when running
-                if isRunning {
-                    Circle()
-                        .fill(Color("AccentColor"))
-                        .frame(width: 6, height: 6)
-                        .offset(x: 4, y: -4)
-                }
-            }
-        }
-    }
-}
-
-struct ProjectCard: View {
-    let project: Project
-    let colorIndex: Int
-    let onOpen: () -> Void
-    let onRename: () -> Void
-    let onDelete: () -> Void
-    
-    private var cardGradient: LinearGradient {
-        switch colorIndex % 4 {
-        case 0:
-            return LinearGradient.accentLight
-        case 1:
-            return LinearGradient.accentSecondaryLight
-        case 2:
-            return LinearGradient.accentTertiaryLight
-        default:
-            return LinearGradient.accentWarmLight
-        }
-    }
-    
-    private var iconGradient: LinearGradient {
-        switch colorIndex % 4 {
-        case 0:
-            return LinearGradient.accent
-        case 1:
-            return LinearGradient.accentSecondary
-        case 2:
-            return LinearGradient.accentTertiary
-        default:
-            return LinearGradient.accentWarm
-        }
-    }
-    
-    private func formatTimerTime(_ seconds: Double) -> String {
-        let totalSeconds = Int(seconds)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let secs = totalSeconds % 60
-        
-        if hours > 0 {
-            return String(format: "%dh %dm", hours, minutes)
-        } else if minutes > 0 {
-            return String(format: "%dm %ds", minutes, secs)
-        } else {
-            return String(format: "%ds", secs)
-        }
-    }
-    
-    private func formatLastWorkedOnDate(_ date: Date?) -> String? {
-        guard let date = date else { return nil }
-
-        let calendar = Calendar.current
-        let now = Date()
-
-        if calendar.isDateInToday(date) {
-            return "Today"
-        } else if calendar.isDateInYesterday(date) {
-            return "Yesterday"
-        } else {
-            let daysAgo = calendar.dateComponents([.day], from: date, to: now).day ?? 0
-            if daysAgo < 7 {
-                return "\(daysAgo) day\(daysAgo == 1 ? "" : "s") ago"
-            } else if daysAgo < 30 {
-                let weeksAgo = daysAgo / 7
-                return "\(weeksAgo) week\(weeksAgo == 1 ? "" : "s") ago"
-            } else {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .medium
-                formatter.timeStyle = .none
-                return formatter.string(from: date)
-            }
-        }
-    }
-
-    private func buildProjectInfoItems(for project: Project) -> [String] {
-        var items: [String] = []
-
-        // Include counters only if there are any
-        if project.counters.count > 0 {
-            items.append("\(project.counters.count) counter\(project.counters.count == 1 ? "" : "s")")
-        }
-
-        // Add notes if any
-        if project.notes.count > 0 {
-            items.append("\(project.notes.count) note\(project.notes.count == 1 ? "" : "s")")
-        }
-
-        // Add timer if any time has been spent
-        if project.timerElapsedSeconds > 0 {
-            items.append(formatTimerTime(project.timerElapsedSeconds))
-        }
-
-        return items
-    }
-    
-    var body: some View {
-        HStack(spacing: 0) {
-            Button(action: onOpen) {
-                HStack(spacing: 16) {
+            )
+            
+            Spacer()
+            
+            // Toolbar (fixed at bottom)
+            HStack(spacing: 16) {
+                // Highlight button
+                Button {
+                    viewModel.shouldAddHighlight = true
+                } label: {
                     ZStack {
                         // Outer glow
                         Circle()
-                            .fill(cardGradient)
-                            .frame(width: 56, height: 56)
-                            .blur(radius: 4)
+                            .fill(LinearGradient.accent)
+                            .frame(width: 48, height: 48)
+                            .blur(radius: 6)
                         
                         // Main circle
                         Circle()
-                            .fill(iconGradient)
-                            .frame(width: 50, height: 50)
+                            .fill(LinearGradient.accent)
+                            .frame(width: 44, height: 44)
                         
                         // Inner highlight
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [Color.white.opacity(0.25), Color.clear],
+                                    colors: [Color.white.opacity(0.3), Color.clear],
                                     startPoint: .topLeading,
                                     endPoint: .center
                                 )
                             )
-                            .frame(width: 50, height: 50)
+                            .frame(width: 44, height: 44)
                         
-                        Image(systemName: "folder.fill")
-                            .font(.title3)
+                        Image(systemName: "highlighter")
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundColor(.white)
                     }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(project.name)
-                            .font(.headline)
-                            .foregroundColor(Color("AppText"))
-
-                        BulletedList(items: buildProjectInfoItems(for: project))
-
-                        if let lastWorkedOn = formatLastWorkedOnDate(project.lastWorkedOnDate) {
-                            Text(lastWorkedOn)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                }
+                .buttonStyle(.plain)
+                .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
+                
+                // Note button
+                Button {
+                    viewModel.shouldAddNote = true
+                } label: {
+                    ZStack {
+                        // Outer glow
+                        Circle()
+                            .fill(LinearGradient.accentWarmLight)
+                            .frame(width: 48, height: 48)
+                            .blur(radius: 6)
+                        
+                        // Main circle
+                        Circle()
+                            .fill(LinearGradient.accentWarm)
+                            .frame(width: 44, height: 44)
+                        
+                        // Inner highlight
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.3), Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .center
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
                     }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            
-            Menu {
-                Button(action: onRename) {
-                    Label("Rename Project", systemImage: "pencil")
-                }
+                .buttonStyle(.plain)
+                .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
                 
-                Button(role: .destructive, action: onDelete) {
-                    Label("Delete Project", systemImage: "trash")
+                // Bookmark button
+                Button {
+                    viewModel.showBookmarkList = true
+                } label: {
+                    ZStack {
+                        // Outer glow
+                        Circle()
+                            .fill(LinearGradient.accentWarmLight)
+                            .frame(width: 48, height: 48)
+                            .blur(radius: 6)
+                        
+                        // Main circle
+                        Circle()
+                            .fill(LinearGradient.accentWarm)
+                            .frame(width: 44, height: 44)
+                        
+                        // Inner highlight
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.3), Color.clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .center
+                                )
+                            )
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: "bookmark.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
                 }
-            } label: {
-                Image(systemName: "ellipsis.circle.fill")
-                    .font(.title3)
-                    .foregroundColor(.secondary)
-                    .padding(.trailing, 16)
+                .buttonStyle(.plain)
+                .enhancedShadow(color: Color("AccentWarm"), radius: 12, y: 6)
+                
+                Spacer()
             }
+            .padding(.leading, 16)
+            .padding(.bottom, UIHelper.safeAreaBottomInset() + 16)
         }
-        .background(
-            ZStack {
-                // Base surface
-                RoundedRectangle(cornerRadius: Constants.cornerRadius)
-                    .fill(Color("AppSurface"))
-                
-                // Subtle gradient overlay
-                RoundedRectangle(cornerRadius: Constants.cornerRadius)
-                    .fill(cardGradient)
-                    .opacity(0.6)
-            }
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Constants.cornerRadius)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color("AppSeparator"),
-                            Color("AppSeparator").opacity(0.5)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.5
+        .zIndex(1)
+    }
+    
+    // MARK: - Overlays Section (Bookmark List)
+    private var bookmarkListOverlay: some View {
+        Group {
+            if viewModel.showBookmarkList {
+                BookmarkListView(
+                    isPresented: $viewModel.showBookmarkList,
+                    bookmarks: viewModel.bookmarks,
+                    onSelectBookmark: { bookmark in
+                        viewModel.navigateToBookmark(bookmark)
+                    },
+                    onCreateNewBookmark: {
+                        viewModel.showBookmarkDialog = true
+                    },
+                    onRecolorBookmark: { bookmark in
+                        viewModel.prepareRecolorBookmark(bookmark)
+                    },
+                    onDeleteBookmark: { bookmark in
+                        viewModel.prepareDeleteBookmark(bookmark)
+                    }
                 )
-        )
-        .enhancedShadow(radius: 10, y: 4)
+                .zIndex(2)
+            }
+        }
     }
-}
-
-
-// MARK: - BulletedList
-
-struct BulletedList: View {
-    let items: [String]
-
-    var body: some View {
-        FlowLayout(spacing: 8) {
-            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                HStack(spacing: 6) {
-                    if index > 0 {
-                        Text("•")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Text(item)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1) // Prevent individual item wrapping
+    
+    // MARK: - Main Content
+    private var mainContent: some View {
+        VStack(spacing: 0) {
+            if viewModel.currentProject != nil {
+                ZStack {
+                    pdfViewerSection
+                    overlaysSection
+                    bookmarkListOverlay
                 }
-                .fixedSize() // Prevent this item from being compressed
-            }
-        }
-    }
-}
-
-// Simple flow layout that keeps items together
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
-        let containerWidth = proposal.width ?? .infinity
-        var height: CGFloat = 0
-        var currentRowWidth: CGFloat = 0
-        var currentRowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(proposal)
-            if currentRowWidth + size.width > containerWidth && currentRowWidth > 0 {
-                // Start new row
-                height += currentRowHeight + spacing
-                currentRowWidth = size.width
-                currentRowHeight = size.height
+                .ignoresSafeArea(.container, edges: .bottom)
+                .dismissKeyboardOnTap()
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing),
+                    removal: .move(edge: .trailing)
+                ))
             } else {
-                // Add to current row
-                currentRowWidth += size.width + spacing
-                currentRowHeight = max(currentRowHeight, size.height)
+                ZStack {
+                    // Subtle background gradient
+                    LinearGradient.backgroundSubtle
+                        .ignoresSafeArea()
+                    
+                    ProjectListView(
+                        projects: viewModel.projects,
+                        onOpenProject: { viewModel.openProject($0) },
+                        onRenameProject: { viewModel.prepareRename($0) },
+                        onDeleteProject: { viewModel.prepareDelete($0) },
+                        onCreateProject: { viewModel.showNewProjectView = true }
+                    )
+                }
+                .transition(.asymmetric(
+                    insertion: .move(edge: .leading),
+                    removal: .move(edge: .leading)
+                ))
             }
         }
+        .navigationTitle(viewModel.currentProject?.name ?? "Knitting Helper")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if viewModel.currentProject != nil {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        viewModel.closeProject()
+                    } label: {
+                        Image(systemName: "house.fill")
+                            .foregroundStyle(LinearGradient.accent)
+                    }
+                }
 
-        height += currentRowHeight
-        return CGSize(width: containerWidth, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
-        var x: CGFloat = bounds.minX
-        var y: CGFloat = bounds.minY
-        var currentRowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(proposal)
-
-            if x + size.width > bounds.maxX && x > bounds.minX {
-                // Start new row
-                x = bounds.minX
-                y += currentRowHeight + spacing
-                currentRowHeight = size.height
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    TimerToolbarButton(
+                        showTimer: viewModel.showTimer,
+                        timerViewModel: viewModel.timerViewModel,
+                        onToggle: { viewModel.toggleTimer() }
+                    )
+                }
             }
-
-            subview.place(at: CGPoint(x: x, y: y), proposal: proposal)
-            x += size.width + spacing
-            currentRowHeight = max(currentRowHeight, size.height)
+        }
+        .alert("Delete Project?", isPresented: $viewModel.showDeleteConfirmation, presenting: viewModel.projectToDelete) { project in
+            Button("Cancel", role: .cancel) {
+                viewModel.clearDeleteState()
+            }
+            Button("Delete", role: .destructive) {
+                viewModel.deleteProject(project)
+                viewModel.clearDeleteState()
+            }
+        } message: { project in
+            Text("Are you sure you want to delete \"\(project.name)\"? This action cannot be undone.")
+        }
+        .alert("Rename Project", isPresented: $viewModel.showRenameDialog, presenting: viewModel.projectToRename) { project in
+            TextField("Project Name", text: $viewModel.newProjectName)
+            Button("Cancel", role: .cancel) {
+                viewModel.clearRenameState()
+            }
+            Button("Rename") {
+                viewModel.renameProject(project, to: viewModel.newProjectName)
+                viewModel.clearRenameState()
+            }
+            .disabled(viewModel.newProjectName.trimmingCharacters(in: .whitespaces).isEmpty)
+        } message: { project in
+            Text("Enter a new name for \"\(project.name)\"")
+        }
+        .alert("Create Bookmark", isPresented: $viewModel.showBookmarkDialog) {
+            TextField("Bookmark Name", text: $viewModel.bookmarkName)
+            Button("Cancel", role: .cancel) {
+                viewModel.bookmarkName = ""
+                viewModel.showBookmarkDialog = false
+            }
+            Button("Create") {
+                bookmarkNameToCreate = viewModel.bookmarkName
+                viewModel.bookmarkName = ""
+                viewModel.showBookmarkDialog = false
+            }
+            .disabled(viewModel.bookmarkName.trimmingCharacters(in: .whitespaces).isEmpty)
+        } message: {
+            Text("Enter a name for the bookmark")
+        }
+        .alert("Delete Bookmark", isPresented: $viewModel.showDeleteBookmarkConfirmation, presenting: viewModel.bookmarkToDelete) { bookmark in
+            Button("Cancel", role: .cancel) {
+                viewModel.clearBookmarkManagementState()
+            }
+            Button("Delete", role: .destructive) {
+                viewModel.deleteBookmark(bookmark)
+                viewModel.clearBookmarkManagementState()
+            }
+        } message: { bookmark in
+            Text("Are you sure you want to delete the bookmark \"\(bookmark.name)\"? This action cannot be undone.")
         }
     }
-}
-
-// MARK: - Preview
-
-#Preview {
-    VStack {
-        BulletedList(items: ["1 counter", "3 notes", "2h 15m", "Today"])
-            .padding()
-            .background(Color.gray.opacity(0.1))
-
-        BulletedList(items: ["5 counters", "1 note", "45m", "2 days ago"])
-            .padding()
-            .background(Color.gray.opacity(0.1))
-
-        BulletedList(items: ["10 counters", "7 notes", "5h 30m", "Last week"])
-            .padding()
-            .background(Color.gray.opacity(0.1))
-
-        Spacer()
+    
+    // MARK: - Body
+    var body: some View {
+        NavigationStack {
+            mainContent
+        }
+        .sheet(isPresented: $viewModel.showNewProjectView) {
+            NewProjectView(project: Binding(
+                get: { nil },
+                set: { newProject in
+                    if let newProject = newProject {
+                        viewModel.addProject(newProject)
+                    }
+                }
+            ))
+        }
+    }
+    
+    // MARK: - Supporting Views
+    
+    struct TimerToolbarButton: View {
+        let showTimer: Bool
+        let timerViewModel: TimerViewModel?
+        let onToggle: () -> Void
+        
+        private var iconName: String {
+            if let timerVM = timerViewModel, timerVM.isRunning {
+                return "stopwatch.fill"
+            } else if showTimer {
+                return "stopwatch.fill"
+            } else {
+                return "stopwatch"
+            }
+        }
+        
+        private var isRunning: Bool {
+            timerViewModel?.isRunning ?? false
+        }
+        
+        var body: some View {
+            Button(action: onToggle) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: iconName)
+                        .foregroundStyle(
+                            isRunning ?
+                            LinearGradient.accent :
+                                LinearGradient(
+                                    colors: [
+                                        Color("AccentColor").opacity(0.6),
+                                        Color("AccentColor").opacity(0.45)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                        )
+                    
+                    // Static indicator dot when running
+                    if isRunning {
+                        Circle()
+                            .fill(Color("AccentColor"))
+                            .frame(width: 6, height: 6)
+                            .offset(x: 4, y: -4)
+                    }
+                }
+            }
+        }
     }
 }

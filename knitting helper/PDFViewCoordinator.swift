@@ -8,17 +8,24 @@
 import SwiftUI
 import UIKit
 import PDFKit
+import Combine
 
 class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDelegate {
     var url: URL
     var highlightsBinding: Binding<[CodableHighlight]>
     var notesBinding: Binding<[CodableNote]>
+    var bookmarksBinding: Binding<[CodableBookmark]>
+    var bookmarkNameBinding: Binding<String>
     var scrollOffsetYBinding: Binding<Double>
+    var selectedBookmarkBinding: Binding<CodableBookmark?>
+    var bookmarkToRecolorBinding: Binding<CodableBookmark?>
+    var shouldShowBookmarkColorPickerBinding: Binding<Bool>
 
     var contentView: UIView?
     var canvasView: PDFCanvasView?
     var overlayView: HighlightOverlayView?
     var noteOverlayView: NoteOverlayView?
+    var bookmarkOverlayView: BookmarkOverlayView?
 
     // Document reference for cache invalidation and change detection
     var document: PDFDocument?
@@ -37,6 +44,23 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     var noteEditorViews: [UUID: UIView] = [:]
     var noteEditorHostingControllers: [UUID: UIHostingController<NoteEditorView>] = [:]
     var noteEditorSizes: [UUID: CGSize] = [:]
+
+    // Bookmark state
+    var onCreateBookmark: ((String, Int, CGFloat, CGFloat) -> Void)?
+
+    // Bookmarks are now read directly from the binding - project is the source of truth
+    var bookmarks: [BookmarkModel] {
+        return bookmarksBinding.wrappedValue.map { codable in
+            BookmarkModel(
+                id: codable.id,
+                page: codable.page,
+                xFraction: codable.xFraction,
+                yFraction: codable.yFraction,
+                name: codable.name,
+                color: UIColor(hex: codable.colorHex) ?? .systemOrange
+            )
+        }
+    }
 
     // Gesture state
     private var isDragging = false
@@ -181,11 +205,16 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
 
     enum ResizeEdge { case top, bottom }
 
-    init(url: URL, highlights: Binding<[CodableHighlight]>, notes: Binding<[CodableNote]>, scrollOffsetY: Binding<Double>) {
+    init(url: URL, highlights: Binding<[CodableHighlight]>, notes: Binding<[CodableNote]>, bookmarks: Binding<[CodableBookmark]>, bookmarkName: Binding<String>, scrollOffsetY: Binding<Double>, selectedBookmark: Binding<CodableBookmark?>, bookmarkToRecolor: Binding<CodableBookmark?>, shouldShowBookmarkColorPicker: Binding<Bool>) {
         self.url = url
         self.highlightsBinding = highlights
         self.notesBinding = notes
+        self.bookmarksBinding = bookmarks
+        self.bookmarkNameBinding = bookmarkName
         self.scrollOffsetYBinding = scrollOffsetY
+        self.selectedBookmarkBinding = selectedBookmark
+        self.bookmarkToRecolorBinding = bookmarkToRecolor
+        self.shouldShowBookmarkColorPickerBinding = shouldShowBookmarkColorPicker
         super.init()
         NotificationCenter.default.addObserver(self, selector: #selector(handleOrientationChange), name: UIDevice.orientationDidChangeNotification, object: nil)
     }
@@ -219,6 +248,33 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     func syncNoteOverlay() {
         guard let noteOverlay = noteOverlayView else { return }
         noteOverlay.update(notes: notes, openNoteIDs: openNoteIDs, canvas: canvasView)
+    }
+
+    func syncBookmarkOverlay(_ bookmarks: [CodableBookmark]? = nil) {
+        guard let bookmarkOverlay = bookmarkOverlayView else { return }
+        let bookmarksToUse = bookmarks ?? self.bookmarks.map { model in
+            CodableBookmark(
+                id: model.id,
+                page: model.page,
+                xFraction: model.xFraction,
+                yFraction: model.yFraction,
+                name: model.name,
+                colorHex: model.color.toHex()
+            )
+        }
+        let models = bookmarksToUse.map { codable in
+            BookmarkModel(
+                id: codable.id,
+                page: codable.page,
+                xFraction: codable.xFraction,
+                yFraction: codable.yFraction,
+                name: codable.name,
+                color: UIColor(hex: codable.colorHex) ?? .systemOrange
+            )
+        }
+        bookmarkOverlay.update(bookmarks: models, canvas: canvasView) { [weak self] bookmarkID, canvasPoint in
+            self?.updateBookmarkPosition(bookmarkID: bookmarkID, to: canvasPoint)
+        }
     }
 
     // Highlight Persistence
@@ -309,7 +365,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         return notes.map { n in
             let size = getNoteEditorSize(for: n.id)
             let isCurrentlyOpen = openNoteIDs.contains(n.id)
-            
+
             return CodableNote(
                 id: n.id,
                 page: n.page,
@@ -323,6 +379,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             )
         }
     }
+
 
     // MARK: - Coordinate conversion helpers
     private func canvasRectToPageRange(_ rect: CGRect) -> (Int, CGFloat, Int, CGFloat) {
@@ -415,19 +472,20 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         
         return (0, 0.5, 0.5)
     }
-    
+
+
     private func syncNotesToBinding() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.notesBinding.wrappedValue = self.getNotes()
-        }
+        self.notesBinding.wrappedValue = self.getNotes()
     }
 
+
     private func syncHighlightsToBinding() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.highlightsBinding.wrappedValue = self.getHighlights()
-        }
+        self.highlightsBinding.wrappedValue = self.getHighlights()
+    }
+
+    func getBookmarks() -> [CodableBookmark] {
+        // Bookmarks are stored directly in the binding as the source of truth
+        return bookmarksBinding.wrappedValue
     }
 
     // Highlight Management
@@ -765,10 +823,11 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             }
         }
     }
-    func scrollViewDidScroll(_ scrollView: UIScrollView) { 
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
         syncOverlay()
         syncNoteOverlay()
         scrollOffsetYBinding.wrappedValue = Double(scrollView.contentOffset.y)
+
         // Update editor positions - defer to avoid layout issues during scrolling
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -1054,23 +1113,108 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         notes[index].color = color
         syncNoteOverlay()
         syncNotesToBinding()
-        
+
         // Update the editor view to reflect the new color
         if let hostingController = noteEditorHostingControllers[noteID] {
             hostingController.rootView = createNoteEditorView(for: noteID)
         }
+    }
+
+    func showColorPicker(for bookmark: CodableBookmark) {
+        guard let canvas = canvasView else { return }
+
+        let pickerView = ColorPickerView(selectedColor: UIColor(hex: bookmark.colorHex) ?? .systemOrange) { [weak self] color in
+            self?.updateBookmarkColor(bookmark.id, to: color)
+        }
+
+        // Show color picker from center of screen
+        guard let window = canvas.window else { return }
+        let screenBounds = window.bounds
+        let centerPoint = CGPoint(x: screenBounds.midX, y: screenBounds.midY)
+
+        pickerView.show(from: centerPoint, in: canvas)
+    }
+
+    private func updateBookmarkColor(_ bookmarkID: UUID, to color: UIColor) {
+        // Update the bookmark color in the binding
+        var updatedBookmarks = bookmarksBinding.wrappedValue
+        if let index = updatedBookmarks.firstIndex(where: { $0.id == bookmarkID }) {
+            updatedBookmarks[index].colorHex = color.toHex()
+            bookmarksBinding.wrappedValue = updatedBookmarks
+        }
+        syncBookmarkOverlay()
     }
     
     func addNoteAtCenter() {
         guard let canvas = canvasView else { return }
         if canvas.pageFrames.isEmpty { layoutCanvas() }
         guard let scroll = canvas.superview?.superview as? UIScrollView else { return }
-        
+
         // Use the exact same approach as addHighlight - it works correctly
         let visibleCenterInScroll = CGPoint(x: scroll.bounds.midX, y: scroll.bounds.midY)
         let centerInCanvas = canvas.convert(visibleCenterInScroll, from: scroll)
-        
+
         addNote(at: centerInCanvas)
+    }
+
+    func addBookmarkAtCenter(name: String) {
+        guard let canvas = canvasView else { return }
+        if canvas.pageFrames.isEmpty { layoutCanvas() }
+        guard let scroll = canvas.superview?.superview as? UIScrollView else { return }
+
+        // Use the exact same approach as addHighlight and addNoteAtCenter
+        let visibleCenterInScroll = CGPoint(x: scroll.bounds.midX, y: scroll.bounds.midY)
+        let centerInCanvas = canvas.convert(visibleCenterInScroll, from: scroll)
+
+        let (page, xFrac, yFrac) = canvasPointToPageFraction(centerInCanvas)
+
+        // Create bookmark using the callback
+        onCreateBookmark?(name, page, xFrac, yFrac)
+    }
+
+
+    func updateBookmarkPosition(bookmarkID: UUID, to canvasPoint: CGPoint) {
+        // Update the bookmark position in the binding
+        var updatedBookmarks = bookmarksBinding.wrappedValue
+        if let index = updatedBookmarks.firstIndex(where: { $0.id == bookmarkID }) {
+            let (page, xFrac, yFrac) = canvasPointToPageFraction(canvasPoint)
+            updatedBookmarks[index].page = page
+            updatedBookmarks[index].xFraction = xFrac
+            updatedBookmarks[index].yFraction = yFrac
+            bookmarksBinding.wrappedValue = updatedBookmarks
+        }
+        // Don't sync overlay here - let SwiftUI handle it naturally
+    }
+
+    func navigateToBookmark(_ bookmark: CodableBookmark) {
+        guard let scrollView = contentView?.superview as? UIScrollView,
+              let canvas = canvasView else { return }
+
+        // Convert bookmark to canvas point
+        let bookmarkModel = BookmarkModel(
+            id: bookmark.id,
+            page: bookmark.page,
+            xFraction: bookmark.xFraction,
+            yFraction: bookmark.yFraction,
+            name: bookmark.name,
+            color: UIColor(hex: bookmark.colorHex) ?? .systemOrange
+        )
+        let canvasPoint = bookmarkModel.point(in: canvas)
+
+        // Calculate the scroll position to place bookmark in top 10% of the visible screen area
+        // Account for content inset (counters overlay) that reduces the visible height
+        let scrollViewBounds = scrollView.bounds
+        let visibleHeight = scrollViewBounds.height - scrollView.contentInset.top
+        let centerX = canvasPoint.x - scrollViewBounds.width / 2
+        let bookmarkVisibleY = scrollView.contentInset.top + visibleHeight * 0.1
+        let topPositionY = canvasPoint.y - bookmarkVisibleY
+
+        // Ensure we don't scroll outside bounds
+        let clampedX = max(0, min(centerX, canvas.bounds.width - scrollViewBounds.width))
+        let clampedY = max(0, min(topPositionY, canvas.bounds.height - scrollViewBounds.height))
+
+        // Scroll to the bookmark position
+        scrollView.setContentOffset(CGPoint(x: clampedX, y: clampedY), animated: true)
     }
 }
 

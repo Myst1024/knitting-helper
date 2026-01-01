@@ -64,7 +64,7 @@ struct CodableNote: Identifiable, Codable, Equatable {
         self.height = height
         self.colorHex = colorHex
     }
-    
+
     static func == (lhs: CodableNote, rhs: CodableNote) -> Bool {
         return lhs.id == rhs.id && lhs.page == rhs.page &&
                abs(lhs.xFraction - rhs.xFraction) < 0.001 &&
@@ -77,7 +77,37 @@ struct CodableNote: Identifiable, Codable, Equatable {
     }
 }
 
-/// Represents a knitting project with a PDF pattern, counters, highlights, and notes
+/// Codable version of a bookmark for persistence
+struct CodableBookmark: Identifiable, Codable, Equatable {
+    let id: UUID
+    // Represent bookmark position as page/fraction coordinates so positions are
+    // invariant across orientation and scaling. xFraction/yFraction are in 0..1
+    // relative to the page's width/height on the canvas.
+    var page: Int
+    var xFraction: CGFloat // 0..1 relative to page width
+    var yFraction: CGFloat // 0..1 relative to page height
+    var name: String
+    var colorHex: String // Hex color string like "#FF00FF"
+
+    init(id: UUID = UUID(), page: Int, xFraction: CGFloat, yFraction: CGFloat, name: String = "", colorHex: String = "#FF9500") {
+        self.id = id
+        self.page = page
+        self.xFraction = xFraction
+        self.yFraction = yFraction
+        self.name = name
+        self.colorHex = colorHex
+    }
+
+    static func == (lhs: CodableBookmark, rhs: CodableBookmark) -> Bool {
+        return lhs.id == rhs.id && lhs.page == rhs.page &&
+               abs(lhs.xFraction - rhs.xFraction) < 0.001 &&
+               abs(lhs.yFraction - rhs.yFraction) < 0.001 &&
+               lhs.name == rhs.name &&
+               lhs.colorHex == rhs.colorHex
+    }
+}
+
+/// Represents a knitting project with a PDF pattern, counters, highlights, notes, and bookmarks
 struct Project: Identifiable, Codable {
     let id: UUID
     var name: String
@@ -85,19 +115,21 @@ struct Project: Identifiable, Codable {
     var counters: [Counter] = []
     var highlights: [CodableHighlight] = []
     var notes: [CodableNote] = []
+    var bookmarks: [CodableBookmark] = []
     var scrollOffsetY: Double = 0
     var timerElapsedSeconds: Double = 0
     var timerIsRunning: Bool = false
     var timerLastStartTime: Date?
     var lastWorkedOnDate: Date?
     
-    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], notes: [CodableNote] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerIsRunning: Bool = false, timerLastStartTime: Date? = nil, lastWorkedOnDate: Date? = nil) {
+    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], notes: [CodableNote] = [], bookmarks: [CodableBookmark] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerIsRunning: Bool = false, timerLastStartTime: Date? = nil, lastWorkedOnDate: Date? = nil) {
         self.id = id
         self.name = name
         self.pdfURL = pdfURL
         self.counters = counters
         self.highlights = highlights
         self.notes = notes
+        self.bookmarks = bookmarks
         self.scrollOffsetY = scrollOffsetY
         self.timerElapsedSeconds = timerElapsedSeconds
         self.timerIsRunning = timerIsRunning

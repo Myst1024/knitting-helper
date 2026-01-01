@@ -33,7 +33,7 @@ enum PDFConstants {
     static let handleHitExtraBottom: CGFloat = 20
     
     // PDF rendering constants
-    static let counterHeight: CGFloat = 60 // Approximate height per counter
+    static let counterHeight: CGFloat = 66 // Approximate height per counter
     static let minimumZoomScale: CGFloat = 0.5
     static let maximumZoomScale: CGFloat = 4.0
     static let imageCacheLimit: Int = 150 * 1024 * 1024 // ~150 MB
@@ -48,5 +48,8 @@ enum PDFConstants {
     static let noteEditorDefaultWidth: CGFloat = 200
     static let noteEditorDefaultHeight: CGFloat = 120
     static let noteEditorResizeHandleSize: CGFloat = 20
+
+    // Bookmark constants
+    static let bookmarkIconSize: CGFloat = 28
 }
 
