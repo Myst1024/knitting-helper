@@ -41,6 +41,10 @@ struct ContentView: View {
                 onCreateBookmark: { name, page, xFraction, yFraction in
                     viewModel.createBookmark(name: name, page: page, xFraction: xFraction, yFraction: yFraction)
                 },
+                onDeleteNote: { noteID in
+                    viewModel.requestDeleteNote(noteID)
+                },
+                noteToDeleteFromUI: $viewModel.noteToDeleteFromUI,
                 highlights: Binding(
                     get: { viewModel.currentProject?.highlights ?? [] },
                     set: { viewModel.updateCurrentProjectHighlights($0) }
@@ -283,56 +287,32 @@ struct ContentView: View {
                 }
             }
         }
-        .alert("Delete Project?", isPresented: $viewModel.showDeleteConfirmation, presenting: viewModel.projectToDelete) { project in
-            Button("Cancel", role: .cancel) {
-                viewModel.clearDeleteState()
-            }
-            Button("Delete", role: .destructive) {
-                viewModel.deleteProject(project)
-                viewModel.clearDeleteState()
-            }
-        } message: { project in
-            Text("Are you sure you want to delete \"\(project.name)\"? This action cannot be undone.")
-        }
-        .alert("Rename Project", isPresented: $viewModel.showRenameDialog, presenting: viewModel.projectToRename) { project in
-            TextField("Project Name", text: $viewModel.newProjectName)
-            Button("Cancel", role: .cancel) {
-                viewModel.clearRenameState()
-            }
-            Button("Rename") {
-                viewModel.renameProject(project, to: viewModel.newProjectName)
-                viewModel.clearRenameState()
-            }
-            .disabled(viewModel.newProjectName.trimmingCharacters(in: .whitespaces).isEmpty)
-        } message: { project in
-            Text("Enter a new name for \"\(project.name)\"")
-        }
-        .alert("Create Bookmark", isPresented: $viewModel.showBookmarkDialog) {
-            TextField("Bookmark Name", text: $viewModel.bookmarkName)
-            Button("Cancel", role: .cancel) {
-                viewModel.bookmarkName = ""
-                viewModel.showBookmarkDialog = false
-            }
-            Button("Create") {
-                bookmarkNameToCreate = viewModel.bookmarkName
-                viewModel.bookmarkName = ""
-                viewModel.showBookmarkDialog = false
-            }
-            .disabled(viewModel.bookmarkName.trimmingCharacters(in: .whitespaces).isEmpty)
-        } message: {
-            Text("Enter a name for the bookmark")
-        }
-        .alert("Delete Bookmark", isPresented: $viewModel.showDeleteBookmarkConfirmation, presenting: viewModel.bookmarkToDelete) { bookmark in
-            Button("Cancel", role: .cancel) {
-                viewModel.clearBookmarkManagementState()
-            }
-            Button("Delete", role: .destructive) {
-                viewModel.deleteBookmark(bookmark)
-                viewModel.clearBookmarkManagementState()
-            }
-        } message: { bookmark in
-            Text("Are you sure you want to delete the bookmark \"\(bookmark.name)\"? This action cannot be undone.")
-        }
+        .projectAlerts(
+            showDeleteConfirmation: $viewModel.showDeleteConfirmation,
+            projectToDelete: viewModel.projectToDelete,
+            clearDeleteState: { viewModel.clearDeleteState() },
+            deleteProject: { viewModel.deleteProject($0) },
+            showRenameDialog: $viewModel.showRenameDialog,
+            projectToRename: viewModel.projectToRename,
+            newProjectName: $viewModel.newProjectName,
+            clearRenameState: { viewModel.clearRenameState() },
+            renameProject: { viewModel.renameProject($0, to: $1) }
+        )
+        .bookmarkAlerts(
+            showBookmarkDialog: $viewModel.showBookmarkDialog,
+            bookmarkName: $viewModel.bookmarkName,
+            bookmarkNameToCreate: $bookmarkNameToCreate,
+            showDeleteBookmarkConfirmation: $viewModel.showDeleteBookmarkConfirmation,
+            bookmarkToDelete: viewModel.bookmarkToDelete,
+            clearBookmarkManagementState: { viewModel.clearBookmarkManagementState() },
+            deleteBookmark: { viewModel.deleteBookmark($0) }
+        )
+        .noteAlerts(
+            showDeleteNoteConfirmation: $viewModel.showDeleteNoteConfirmation,
+            noteToDelete: viewModel.noteToDelete,
+            clearDeleteNoteState: { viewModel.clearDeleteNoteState() },
+            deleteNote: { viewModel.deleteNote($0) }
+        )
     }
     
     // MARK: - Body
@@ -400,5 +380,104 @@ struct ContentView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Alert Containers
+private extension View {
+    func projectAlerts(
+        showDeleteConfirmation: Binding<Bool>,
+        projectToDelete: Project?,
+        clearDeleteState: @escaping () -> Void,
+        deleteProject: @escaping (Project) -> Void,
+        showRenameDialog: Binding<Bool>,
+        projectToRename: Project?,
+        newProjectName: Binding<String>,
+        clearRenameState: @escaping () -> Void,
+        renameProject: @escaping (Project, String) -> Void
+    ) -> some View {
+        self
+            .alert("Delete Project?", isPresented: showDeleteConfirmation, presenting: projectToDelete) { project in
+                Button("Cancel", role: .cancel) {
+                    clearDeleteState()
+                }
+                Button("Delete", role: .destructive) {
+                    deleteProject(project)
+                    clearDeleteState()
+                }
+            } message: { project in
+                Text("Are you sure you want to delete \"\(project.name)\"? This action cannot be undone.")
+            }
+            .alert("Rename Project", isPresented: showRenameDialog, presenting: projectToRename) { project in
+                TextField("Project Name", text: newProjectName)
+                Button("Cancel", role: .cancel) {
+                    clearRenameState()
+                }
+                Button("Rename") {
+                    renameProject(project, newProjectName.wrappedValue)
+                    clearRenameState()
+                }
+                .disabled(newProjectName.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
+            } message: { project in
+                Text("Enter a new name for \"\(project.name)\"")
+            }
+    }
+
+    func bookmarkAlerts(
+        showBookmarkDialog: Binding<Bool>,
+        bookmarkName: Binding<String>,
+        bookmarkNameToCreate: Binding<String?>,
+        showDeleteBookmarkConfirmation: Binding<Bool>,
+        bookmarkToDelete: CodableBookmark?,
+        clearBookmarkManagementState: @escaping () -> Void,
+        deleteBookmark: @escaping (CodableBookmark) -> Void
+    ) -> some View {
+        self
+            .alert("Create Bookmark", isPresented: showBookmarkDialog) {
+                TextField("Bookmark Name", text: bookmarkName)
+                Button("Cancel", role: .cancel) {
+                    bookmarkName.wrappedValue = ""
+                    showBookmarkDialog.wrappedValue = false
+                }
+                Button("Create") {
+                    bookmarkNameToCreate.wrappedValue = bookmarkName.wrappedValue
+                    bookmarkName.wrappedValue = ""
+                    showBookmarkDialog.wrappedValue = false
+                }
+                .disabled(bookmarkName.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
+            } message: {
+                Text("Enter a name for the bookmark")
+            }
+            .alert("Delete Bookmark", isPresented: showDeleteBookmarkConfirmation, presenting: bookmarkToDelete) { bookmark in
+                Button("Cancel", role: .cancel) {
+                    clearBookmarkManagementState()
+                }
+                Button("Delete", role: .destructive) {
+                    deleteBookmark(bookmark)
+                    clearBookmarkManagementState()
+                }
+            } message: { bookmark in
+                Text("Are you sure you want to delete the bookmark \"\(bookmark.name)\"? This action cannot be undone.")
+            }
+    }
+
+    func noteAlerts(
+        showDeleteNoteConfirmation: Binding<Bool>,
+        noteToDelete: UUID?,
+        clearDeleteNoteState: @escaping () -> Void,
+        deleteNote: @escaping (UUID) -> Void
+    ) -> some View {
+        self
+            .alert("Delete Note?", isPresented: showDeleteNoteConfirmation, presenting: noteToDelete) { noteID in
+                Button("Cancel", role: .cancel) {
+                    clearDeleteNoteState()
+                }
+                Button("Delete", role: .destructive) {
+                    deleteNote(noteID)
+                    clearDeleteNoteState()
+                }
+            } message: { noteID in
+                Text("Are you sure you want to delete this note? This action cannot be undone.")
+            }
     }
 }

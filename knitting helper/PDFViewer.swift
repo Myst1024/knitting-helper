@@ -15,6 +15,8 @@ struct PDFViewer: View {
     @Binding var shouldAddNote: Bool
     @Binding var bookmarkName: String
     var onCreateBookmark: (String, Int, CGFloat, CGFloat) -> Void
+    var onDeleteNote: (UUID) -> Void
+    @Binding var noteToDeleteFromUI: UUID?
     @Binding var highlights: [CodableHighlight]
     @Binding var notes: [CodableNote]
     @Binding var bookmarks: [CodableBookmark]
@@ -26,7 +28,7 @@ struct PDFViewer: View {
     @Binding var bookmarkNameToCreate: String?
 
     var body: some View {
-        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, shouldAddNote: $shouldAddNote, bookmarkName: $bookmarkName, onCreateBookmark: onCreateBookmark, highlights: $highlights, notes: $notes, bookmarks: $bookmarks, counterCount: counterCount, scrollOffsetY: $scrollOffsetY, selectedBookmark: $selectedBookmark, bookmarkToRecolor: $bookmarkToRecolor, shouldShowBookmarkColorPicker: $shouldShowBookmarkColorPicker, bookmarkNameToCreate: $bookmarkNameToCreate)
+        PDFKitView(url: url, shouldAddHighlight: $shouldAddHighlight, shouldAddNote: $shouldAddNote, bookmarkName: $bookmarkName, onCreateBookmark: onCreateBookmark, onDeleteNote: onDeleteNote, noteToDeleteFromUI: $noteToDeleteFromUI, highlights: $highlights, notes: $notes, bookmarks: $bookmarks, counterCount: counterCount, scrollOffsetY: $scrollOffsetY, selectedBookmark: $selectedBookmark, bookmarkToRecolor: $bookmarkToRecolor, shouldShowBookmarkColorPicker: $shouldShowBookmarkColorPicker, bookmarkNameToCreate: $bookmarkNameToCreate)
     }
 }
 
@@ -36,6 +38,8 @@ struct PDFKitView: UIViewRepresentable {
     @Binding var shouldAddNote: Bool
     @Binding var bookmarkName: String
     var onCreateBookmark: (String, Int, CGFloat, CGFloat) -> Void
+    var onDeleteNote: (UUID) -> Void
+    @Binding var noteToDeleteFromUI: UUID?
     @Binding var highlights: [CodableHighlight]
     @Binding var notes: [CodableNote]
     @Binding var bookmarks: [CodableBookmark]
@@ -219,38 +223,30 @@ struct PDFKitView: UIViewRepresentable {
         }
 
         // Update notes when they change (compare by ID and count)
-        // Only load notes from binding if coordinator doesn't have them (prevents overwriting notes added by coordinator)
         let coordinatorNotes = context.coordinator.getNotes()
 
-        // If coordinator has more notes than binding, coordinator is the source of change - don't overwrite
-        if coordinatorNotes.count > notes.count {
-            // Coordinator just added notes, don't load from binding
-            return
-        }
-
-        // If coordinator has fewer notes than binding, coordinator deleted notes - don't reload from binding
-        if coordinatorNotes.count < notes.count {
-            // Coordinator just deleted notes, sync overlay but don't reload from binding
-            context.coordinator.syncNoteOverlay()
-            return
-        }
-
-        // If binding has notes that coordinator doesn't have, load them (external changes)
+        // Check if binding has different notes than coordinator
         let coordinatorNoteIDs = Set(coordinatorNotes.map { $0.id })
         let bindingNoteIDs = Set(notes.map { $0.id })
 
-        if !bindingNoteIDs.isSubset(of: coordinatorNoteIDs) {
-            // Binding has new notes from external source, load them
+        if coordinatorNoteIDs != bindingNoteIDs {
+            // Notes changed externally (additions or deletions), load from binding
             context.coordinator.loadNotes(notes)
-            context.coordinator.syncNoteOverlay()
-        } else if coordinatorNotes.count != notes.count {
-            // Counts differ but no new IDs - might be a deletion, sync overlay
             context.coordinator.syncNoteOverlay()
         }
 
         // Update bookmark overlay when bookmarks change
         // Pass bookmarks directly to avoid binding issues
         context.coordinator.syncBookmarkOverlay(bookmarks)
+
+        // If a note should be deleted from UI, tell coordinator to clean up
+        if let noteID = noteToDeleteFromUI {
+            context.coordinator.confirmDeleteNote(noteID)
+            // Reset the binding after processing
+            DispatchQueue.main.async {
+                noteToDeleteFromUI = nil
+            }
+        }
 
         // If the URL/document changed, replace the document and clear cached images
         if context.coordinator.document?.documentURL != url {
@@ -286,6 +282,8 @@ struct PDFKitView: UIViewRepresentable {
     }
     
     func makeCoordinator() -> PDFViewCoordinator {
-        PDFViewCoordinator(url: url, highlights: $highlights, notes: $notes, bookmarks: $bookmarks, bookmarkName: $bookmarkName, scrollOffsetY: $scrollOffsetY, selectedBookmark: $selectedBookmark, bookmarkToRecolor: $bookmarkToRecolor, shouldShowBookmarkColorPicker: $shouldShowBookmarkColorPicker)
+        let coordinator = PDFViewCoordinator(url: url, highlights: $highlights, notes: $notes, bookmarks: $bookmarks, bookmarkName: $bookmarkName, scrollOffsetY: $scrollOffsetY, selectedBookmark: $selectedBookmark, bookmarkToRecolor: $bookmarkToRecolor, shouldShowBookmarkColorPicker: $shouldShowBookmarkColorPicker)
+        coordinator.onDeleteNote = onDeleteNote
+        return coordinator
     }
 }

@@ -24,6 +24,9 @@ class ProjectListViewModel: ObservableObject {
     @Published var shouldShowBookmarkColorPicker = false
     @Published var bookmarkToDelete: CodableBookmark?
     @Published var showDeleteBookmarkConfirmation = false
+    @Published var noteToDelete: UUID?
+    @Published var showDeleteNoteConfirmation = false
+    @Published var noteToDeleteFromUI: UUID?
     @Published var shouldAddBookmark = false
     @Published var projectToDelete: Project?
     @Published var showDeleteConfirmation = false
@@ -434,6 +437,41 @@ class ProjectListViewModel: ObservableObject {
                 print("Failed to save bookmark deletion: \(error)")
             }
         }
+    }
+
+    func requestDeleteNote(_ noteID: UUID) {
+        noteToDelete = noteID
+        showDeleteNoteConfirmation = true
+    }
+
+    func deleteNote(_ noteID: UUID) {
+        guard let index = projects.firstIndex(where: { $0.id == currentProject?.id }),
+              navigationState == .idle else {
+            return
+        }
+
+        // Create a new array without the deleted note to ensure SwiftUI detects the change
+        projects[index].notes = projects[index].notes.filter { $0.id != noteID }
+
+        // Update currentProject immediately to trigger binding updates
+        currentProject = projects[index]
+
+        // Signal to UI that note should be deleted from coordinator state
+        noteToDeleteFromUI = noteID
+
+        // Save changes asynchronously
+        Task {
+            do {
+                try await Project.saveProjects(projects)
+            } catch {
+                print("Failed to save note deletion: \(error)")
+            }
+        }
+    }
+
+    func clearDeleteNoteState() {
+        noteToDelete = nil
+        showDeleteNoteConfirmation = false
     }
 
     func createBookmark(name: String, page: Int, xFraction: CGFloat, yFraction: CGFloat) {

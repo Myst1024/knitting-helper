@@ -47,6 +47,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
 
     // Bookmark state
     var onCreateBookmark: ((String, Int, CGFloat, CGFloat) -> Void)?
+    var onDeleteNote: ((UUID) -> Void)?
 
     // Bookmarks are now read directly from the binding - project is the source of truth
     var bookmarks: [BookmarkModel] {
@@ -324,7 +325,16 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         
         var models: [NoteModel] = []
         var notesToOpen: [UUID] = []
-        
+
+        // Get existing note IDs to clean up removed notes
+        let existingNoteIDs = Set(noteEditorSizes.keys)
+        let newNoteIDs = Set(codableNotes.map { $0.id })
+
+        // Remove sizes for notes that no longer exist
+        for removedID in existingNoteIDs.subtracting(newNoteIDs) {
+            noteEditorSizes.removeValue(forKey: removedID)
+        }
+
         for codable in codableNotes {
             let model = NoteModel(
                 id: codable.id,
@@ -338,7 +348,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 color: UIColor(hex: codable.colorHex) ?? .systemBlue
             )
             models.append(model)
-            
+
             // Restore size if it was saved
             if codable.width > 0 && codable.height > 0 {
                 noteEditorSizes[codable.id] = CGSize(width: codable.width, height: codable.height)
@@ -346,7 +356,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 // Clear any stale size entry
                 noteEditorSizes.removeValue(forKey: codable.id)
             }
-            
+
             // Track notes that should be opened
             if codable.isOpen {
                 notesToOpen.append(codable.id)
@@ -1106,48 +1116,18 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     }
     
     func deleteNote(_ noteID: UUID) {
-        // Present confirmation alert using UIKit
-        guard let hostingController = noteEditorHostingControllers[noteID] else {
-            // If we can't find the hosting controller, just delete without confirmation
-            closeNoteEditor(for: noteID)
-            notes.removeAll { $0.id == noteID }
-            noteEditorSizes.removeValue(forKey: noteID)
-            syncNoteOverlay()
-            syncNotesToBinding()
-            return
-        }
-        
-        let alert = UIAlertController(
-            title: "Delete Note?",
-            message: "Are you sure you want to delete this note? This action cannot be undone.",
-            preferredStyle: .alert
-        )
-        
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
-            guard let self = self else { return }
-            self.closeNoteEditor(for: noteID)
-            self.notes.removeAll { $0.id == noteID }
-            self.noteEditorSizes.removeValue(forKey: noteID)
-            self.syncNoteOverlay()
-            self.syncNotesToBinding()
-        })
-        
-        // Find the topmost view controller to present from
-        var presentingVC: UIViewController = hostingController
-        while let parent = presentingVC.parent {
-            presentingVC = parent
-        }
-        while let presented = presentingVC.presentedViewController {
-            presentingVC = presented
-        }
-        
-        // If we still can't find a good presenter, try to get the window's root
-        if presentingVC == hostingController, let window = hostingController.view.window {
-            presentingVC = window.rootViewController ?? hostingController
-        }
-        
-        presentingVC.present(alert, animated: true)
+        // Just show the confirmation alert - don't delete yet
+        onDeleteNote?(noteID)
+    }
+
+    func confirmDeleteNote(_ noteID: UUID) {
+        // User confirmed deletion - now clean up UI state
+        closeNoteEditor(for: noteID)
+        notes.removeAll { $0.id == noteID }
+        noteEditorSizes.removeValue(forKey: noteID)
+        openNoteIDs.remove(noteID)
+        syncNoteOverlay()
+        syncNotesToBinding()
     }
     
     private func showColorPicker(for note: NoteModel) {
