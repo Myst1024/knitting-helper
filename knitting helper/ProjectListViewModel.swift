@@ -328,8 +328,8 @@ class ProjectListViewModel: ObservableObject {
     func initializeTimer(for project: Project) {
         let viewModel = TimerViewModel(
             elapsedSeconds: project.timerElapsedSeconds,
-            isRunning: project.timerIsRunning,
-            lastStartTime: project.timerLastStartTime
+            isRunning: false, // Always start in paused state when loading a project
+            lastStartTime: project.timerLastStartTime // Don't resume timing from previous session
         )
         
         viewModel.setSaveCallback { [weak self] in
@@ -351,7 +351,6 @@ class ProjectListViewModel: ObservableObject {
 
         let state = timerVM.timerState
         current.timerElapsedSeconds = state.elapsedSeconds
-        current.timerIsRunning = state.isRunning
         current.timerLastStartTime = state.lastStartTime
         // Update last worked on date when timer is running
         if state.isRunning {

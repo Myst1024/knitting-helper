@@ -375,7 +375,7 @@ struct ContentView: View {
                         Circle()
                             .fill(Color("AccentColor"))
                             .frame(width: 6, height: 6)
-                            .offset(x: 4, y: -4)
+                            .offset(x: 2, y: -2)
                     }
                 }
             }

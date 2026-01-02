@@ -119,11 +119,10 @@ struct Project: Identifiable, Codable {
     var bookmarks: [CodableBookmark] = []
     var scrollOffsetY: Double = 0
     var timerElapsedSeconds: Double = 0
-    var timerIsRunning: Bool = false
     var timerLastStartTime: Date?
     var lastWorkedOnDate: Date?
     
-    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], notes: [CodableNote] = [], bookmarks: [CodableBookmark] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerIsRunning: Bool = false, timerLastStartTime: Date? = nil, lastWorkedOnDate: Date? = nil) {
+    init(id: UUID = UUID(), name: String, pdfURL: URL, counters: [Counter] = [], highlights: [CodableHighlight] = [], notes: [CodableNote] = [], bookmarks: [CodableBookmark] = [], scrollOffsetY: Double = 0, timerElapsedSeconds: Double = 0, timerLastStartTime: Date? = nil, lastWorkedOnDate: Date? = nil) {
         self.id = id
         self.name = name
         self.pdfURL = pdfURL
@@ -133,7 +132,6 @@ struct Project: Identifiable, Codable {
         self.bookmarks = bookmarks
         self.scrollOffsetY = scrollOffsetY
         self.timerElapsedSeconds = timerElapsedSeconds
-        self.timerIsRunning = timerIsRunning
         self.timerLastStartTime = timerLastStartTime
         self.lastWorkedOnDate = lastWorkedOnDate
     }
