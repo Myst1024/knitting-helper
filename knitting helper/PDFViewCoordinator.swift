@@ -40,10 +40,11 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     
     // Note state
     var notes: [NoteModel] = []
-    var openNoteIDs: Set<UUID> = []
     var noteEditorViews: [UUID: UIView] = [:]
     var noteEditorHostingControllers: [UUID: UIHostingController<NoteEditorView>] = [:]
-    var noteEditorSizes: [UUID: CGSize] = [:]
+
+    // Prevent recursive updates when coordinator is syncing to binding
+    var isCoordinatorSyncingNotes = false
 
     // Bookmark state
     var onCreateBookmark: ((String, Int, CGFloat, CGFloat) -> Void)?
@@ -95,13 +96,8 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     
     /// Gets the persisted size for a note editor, or returns default size
     private func getNoteEditorSize(for noteID: UUID) -> CGSize {
-        if let savedSize = noteEditorSizes[noteID] {
-            return savedSize
-        }
         if let note = note(for: noteID), note.width > 0 && note.height > 0 {
-            let size = CGSize(width: note.width, height: note.height)
-            noteEditorSizes[noteID] = size
-            return size
+            return CGSize(width: note.width, height: note.height)
         }
         return CGSize(
             width: PDFConstants.noteEditorDefaultWidth,
@@ -111,7 +107,6 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     
     /// Saves the size for a note editor
     private func setNoteEditorSize(_ size: CGSize, for noteID: UUID) {
-        noteEditorSizes[noteID] = size
         if let index = noteIndex(for: noteID) {
             notes[index].width = size.width
             notes[index].height = size.height
@@ -193,13 +188,12 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             ),
             size: Binding(
                 get: { [weak self] in
-                    self?.noteEditorSizes[noteID] ?? defaultSize
+                    self?.getNoteEditorSize(for: noteID) ?? defaultSize
                 },
                 set: { [weak self] newSize in
                     guard let self = self else { return }
-                    self.noteEditorSizes[noteID] = newSize
-                    self.updateNoteEditorFrame(for: noteID)
                     self.setNoteEditorSize(newSize, for: noteID)
+                    self.updateNoteEditorFrame(for: noteID)
                     self.syncNotesToBinding()
                 }
             ),
@@ -261,6 +255,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     
     func syncNoteOverlay() {
         guard let noteOverlay = noteOverlayView else { return }
+        let openNoteIDs = Set(notes.filter { $0.isOpen }.map { $0.id })
         noteOverlay.update(notes: notes, openNoteIDs: openNoteIDs, canvas: canvasView)
     }
 
@@ -311,29 +306,22 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     
     // Note Persistence
     func loadNotes(_ codableNotes: [CodableNote]) {
-        // Close all existing note editors first to prevent duplicates
-        // Do this without syncing to binding to avoid triggering reloads
-        let existingOpenNoteIDs = Array(openNoteIDs)
-        for noteID in existingOpenNoteIDs {
-            openNoteIDs.remove(noteID)
+        let newNoteIDs = Set(codableNotes.map { $0.id })
+
+        // Close editors only for notes that no longer exist (to prevent flickering)
+        let currentOpenNoteIDs = Set(noteEditorViews.keys)
+        let notesToClose = currentOpenNoteIDs.filter { !newNoteIDs.contains($0) }
+        for noteID in notesToClose {
             if let editorView = noteEditorViews[noteID] {
                 editorView.removeFromSuperview()
                 noteEditorViews.removeValue(forKey: noteID)
             }
             noteEditorHostingControllers.removeValue(forKey: noteID)
         }
-        
+
+        // Create new note models
         var models: [NoteModel] = []
         var notesToOpen: [UUID] = []
-
-        // Get existing note IDs to clean up removed notes
-        let existingNoteIDs = Set(noteEditorSizes.keys)
-        let newNoteIDs = Set(codableNotes.map { $0.id })
-
-        // Remove sizes for notes that no longer exist
-        for removedID in existingNoteIDs.subtracting(newNoteIDs) {
-            noteEditorSizes.removeValue(forKey: removedID)
-        }
 
         for codable in codableNotes {
             let model = NoteModel(
@@ -349,35 +337,25 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             )
             models.append(model)
 
-            // Restore size if it was saved
-            if codable.width > 0 && codable.height > 0 {
-                noteEditorSizes[codable.id] = CGSize(width: codable.width, height: codable.height)
-            } else {
-                // Clear any stale size entry
-                noteEditorSizes.removeValue(forKey: codable.id)
-            }
-
             // Track notes that should be opened
             if codable.isOpen {
                 notesToOpen.append(codable.id)
             }
         }
         notes = models
-        
-        // Restore open state
-        openNoteIDs = Set(notesToOpen)
-        
+
         syncNoteOverlay()
-        
-        // Open note editors for notes that were previously open
+
+        // Open editors only for newly opened notes
         // Delay to ensure canvas is laid out
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self else { return }
-            for noteID in notesToOpen {
-                // Only open if still in openNoteIDs and note still exists
-                if self.openNoteIDs.contains(noteID) && self.notes.contains(where: { $0.id == noteID }) {
-                    self.openNoteEditor(for: noteID)
-                }
+            let notesToOpenEditors = notesToOpen.filter { noteID in
+                !self.noteEditorViews.keys.contains(noteID) &&
+                self.notes.contains(where: { $0.id == noteID && $0.isOpen })
+            }
+            for noteID in notesToOpenEditors {
+                self.openNoteEditor(for: noteID, skipBindingSync: true)
             }
         }
     }
@@ -385,7 +363,6 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     func getNotes() -> [CodableNote] {
         return notes.map { n in
             let size = getNoteEditorSize(for: n.id)
-            let isCurrentlyOpen = openNoteIDs.contains(n.id)
 
             return CodableNote(
                 id: n.id,
@@ -393,7 +370,7 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 xFraction: n.xFraction,
                 yFraction: n.yFraction,
                 text: n.text,
-                isOpen: isCurrentlyOpen,
+                isOpen: n.isOpen,
                 width: size.width,
                 height: size.height,
                 colorHex: n.color.toHex()
@@ -496,7 +473,12 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
 
 
     private func syncNotesToBinding() {
+        isCoordinatorSyncingNotes = true
         self.notesBinding.wrappedValue = self.getNotes()
+        // Reset the flag after binding update (SwiftUI will process this asynchronously)
+        DispatchQueue.main.async {
+            self.isCoordinatorSyncingNotes = false
+        }
     }
 
 
@@ -739,10 +721,10 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 notes[noteIndex].set(fromPage: page, xFraction: xFrac, yFraction: yFrac)
                 syncNoteOverlay()
                 // Update editor position if open - defer to ensure layout is complete
-                let draggedNoteID = notes[noteIndex].id
-                if openNoteIDs.contains(draggedNoteID) {
+                let draggedNote = notes[noteIndex]
+                if draggedNote.isOpen {
                     DispatchQueue.main.async { [weak self] in
-                        self?.updateNoteEditorPosition(for: draggedNoteID)
+                        self?.updateNoteEditorPosition(for: draggedNote.id)
                     }
                 }
             } else if isDraggingBookmark {
@@ -790,8 +772,9 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             if isResizingNoteEditor {
                 // Save the final size to the note model when resize ends
                 if let noteID = noteEditorResizeNoteID,
-                   let finalSize = noteEditorSizes[noteID],
+                   let editorView = noteEditorViews[noteID],
                    let index = notes.firstIndex(where: { $0.id == noteID }) {
+                    let finalSize = editorView.frame.size
                     notes[index].width = finalSize.width
                     notes[index].height = finalSize.height
                     syncNotesToBinding()
@@ -878,8 +861,8 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         // Update editor positions - defer to ensure layout is complete after zoom
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            for noteID in self.openNoteIDs {
-                self.updateNoteEditorPosition(for: noteID)
+            for note in self.notes where note.isOpen {
+                self.updateNoteEditorPosition(for: note.id)
             }
         }
     }
@@ -891,8 +874,8 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         // Update editor positions - defer to avoid layout issues during scrolling
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            for noteID in self.openNoteIDs {
-                self.updateNoteEditorPosition(for: noteID)
+            for note in self.notes where note.isOpen {
+                self.updateNoteEditorPosition(for: note.id)
             }
         }
     }
@@ -968,55 +951,51 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     func addNote(at location: CGPoint) {
         guard let canvas = canvasView else { return }
         if canvas.pageFrames.isEmpty { layoutCanvas() }
-        
+
         let (page, xFrac, yFrac) = canvasPointToPageFraction(location)
         let note = NoteModel(id: UUID(), page: page, xFraction: xFrac, yFraction: yFrac, text: "", color: .systemBlue)
         notes.append(note)
         syncNoteOverlay()
+        // Open the editor for the new note (skip binding sync since we'll do it at the end)
+        openNoteEditor(for: note.id, skipBindingSync: true)
         syncNotesToBinding()
-        // Open the editor for the new note
-        toggleNoteEditor(for: note.id)
     }
     
     func toggleNoteEditor(for noteID: UUID) {
-        if openNoteIDs.contains(noteID) {
+        if let note = note(for: noteID), note.isOpen {
             closeNoteEditor(for: noteID)
         } else {
             openNoteEditor(for: noteID)
         }
     }
     
-    func openNoteEditor(for noteID: UUID) {
+    func openNoteEditor(for noteID: UUID, skipBindingSync: Bool = false) {
         guard let note = note(for: noteID),
               let canvas = canvasView,
               let contentView = contentView else { return }
-        
+
         // If editor is already open, don't create a duplicate
-        if noteEditorViews[noteID] != nil {
-            return
-        }
-        
+        if noteEditorViews[noteID] != nil { return }
+
         // Ensure canvas is laid out before positioning
-        if canvas.pageFrames.isEmpty {
-            layoutCanvas()
-        }
-        
-        openNoteIDs.insert(noteID)
-        
+        if canvas.pageFrames.isEmpty { layoutCanvas() }
+
         // Update the note model's isOpen state
         if let index = noteIndex(for: noteID) {
             notes[index].isOpen = true
-            syncNotesToBinding()
+            if !skipBindingSync {
+                syncNotesToBinding()
+            }
         }
         
         syncNoteOverlay()
         
         // Calculate position BEFORE creating the view to avoid flickering
         guard let position = calculateNoteEditorPosition(for: note) else {
-            // If bounds aren't ready, defer opening
-            DispatchQueue.main.async { [weak self] in
-                self?.openNoteEditor(for: noteID)
-            }
+        // If bounds aren't ready, defer opening
+        DispatchQueue.main.async { [weak self] in
+            self?.openNoteEditor(for: noteID, skipBindingSync: true)
+        }
             return
         }
         
@@ -1060,17 +1039,19 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
         editorView.frame.size = size
     }
     
-    func closeNoteEditor(for noteID: UUID) {
-        openNoteIDs.remove(noteID)
+    func closeNoteEditor(for noteID: UUID, skipBindingSync: Bool = false) {
         syncNoteOverlay()
-        
+
         // Save the current size to the note model before closing
-        if let size = noteEditorSizes[noteID] {
+        if let editorView = noteEditorViews[noteID] {
+            let size = editorView.frame.size
             setNoteEditorSize(size, for: noteID)
         }
         if let index = noteIndex(for: noteID) {
             notes[index].isOpen = false
-            syncNotesToBinding()
+            if !skipBindingSync {
+                syncNotesToBinding()
+            }
         }
         
         if let editorView = noteEditorViews[noteID] {
@@ -1078,7 +1059,6 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             noteEditorViews.removeValue(forKey: noteID)
         }
         noteEditorHostingControllers.removeValue(forKey: noteID)
-        // Keep the size in noteEditorSizes so it's remembered if reopened
     }
     
     func updateNoteEditorPosition(for noteID: UUID) {
@@ -1121,13 +1101,14 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     }
 
     func confirmDeleteNote(_ noteID: UUID) {
-        // User confirmed deletion - now clean up UI state
-        closeNoteEditor(for: noteID)
-        notes.removeAll { $0.id == noteID }
-        noteEditorSizes.removeValue(forKey: noteID)
-        openNoteIDs.remove(noteID)
+        // Note has already been removed from project by viewModel and coordinator updated by loadNotes
+        // Just clean up remaining coordinator state
+        if let editorView = noteEditorViews[noteID] {
+            editorView.removeFromSuperview()
+            noteEditorViews.removeValue(forKey: noteID)
+        }
+        noteEditorHostingControllers.removeValue(forKey: noteID)
         syncNoteOverlay()
-        syncNotesToBinding()
     }
     
     private func showColorPicker(for note: NoteModel) {

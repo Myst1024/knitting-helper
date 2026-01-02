@@ -223,16 +223,19 @@ struct PDFKitView: UIViewRepresentable {
         }
 
         // Update notes when they change (compare by ID and count)
-        let coordinatorNotes = context.coordinator.getNotes()
+        // Skip if coordinator is currently syncing to binding to prevent recursive updates
+        if !context.coordinator.x {
+            let coordinatorNotes = context.coordinator.getNotes()
 
-        // Check if binding has different notes than coordinator
-        let coordinatorNoteIDs = Set(coordinatorNotes.map { $0.id })
-        let bindingNoteIDs = Set(notes.map { $0.id })
+            // Check if binding has different notes than coordinator
+            let coordinatorNoteIDs = Set(coordinatorNotes.map { $0.id })
+            let bindingNoteIDs = Set(notes.map { $0.id })
 
-        if coordinatorNoteIDs != bindingNoteIDs {
-            // Notes changed externally (additions or deletions), load from binding
-            context.coordinator.loadNotes(notes)
-            context.coordinator.syncNoteOverlay()
+            if coordinatorNoteIDs != bindingNoteIDs {
+                // Notes changed externally (additions or deletions), load from binding
+                context.coordinator.loadNotes(notes)
+                context.coordinator.syncNoteOverlay()
+            }
         }
 
         // Update bookmark overlay when bookmarks change

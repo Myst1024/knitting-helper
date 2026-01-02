@@ -40,7 +40,7 @@ enum PDFConstants {
     
     // Note constants
     static let noteIconSize: CGFloat = 26
-    static let noteIconTapHitSlop: CGFloat = 10
+    static let noteIconTapHitSlop: CGFloat = 12
     static let noteEditorMinWidth: CGFloat = 120
     static let noteEditorMaxWidth: CGFloat = 350
     static let noteEditorMinHeight: CGFloat = 40
