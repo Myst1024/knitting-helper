@@ -606,18 +606,40 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 }
             }
             
-            // Check for note drag
+            // Check for note drag - either on the icon or within the editor view
             if !foundHandle, noteOverlayView != nil {
-                for note in notes {
-                    let notePoint = note.point(in: canvas)
-                    if noteIconHitArea(at: notePoint).contains(location) {
-                        isDraggingNote = true
-                        noteDragStartPoint = location
-                        noteDragStartModel = note
-                        foundHandle = true
-                        if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = false }
-                        break
+                var noteToDrag: NoteModel?
+
+                // First check if touch is within a note editor view
+                if let contentView = contentView {
+                    let locationInContentView = canvas.convert(location, to: contentView)
+                    for (noteID, editorView) in noteEditorViews {
+                        if editorView.frame.contains(locationInContentView) {
+                            if let note = note(for: noteID) {
+                                noteToDrag = note
+                                break
+                            }
+                        }
                     }
+                }
+
+                // If not found in editor, check the icon hit area
+                if noteToDrag == nil {
+                    for note in notes {
+                        let notePoint = note.point(in: canvas)
+                        if noteIconHitArea(at: notePoint).contains(location) {
+                            noteToDrag = note
+                            break
+                        }
+                    }
+                }
+
+                if let note = noteToDrag {
+                    isDraggingNote = true
+                    noteDragStartPoint = location
+                    noteDragStartModel = note
+                    foundHandle = true
+                    if let scroll = canvas.superview?.superview as? UIScrollView { scroll.isScrollEnabled = false }
                 }
             }
 
@@ -913,11 +935,29 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                 }
             }
             
-            // Check for note drag
-            if notes.contains(where: { note in
-                let notePoint = note.point(in: canvas)
-                return noteIconHitArea(at: notePoint).contains(loc)
-            }) {
+            // Check for note drag - either on the icon or within the editor view
+            var shouldAllowNoteDrag = false
+
+            // Check if touch is within a note editor view
+            if let contentView = contentView {
+                let locationInContentView = canvas.convert(loc, to: contentView)
+                for (_, editorView) in noteEditorViews {
+                    if editorView.frame.contains(locationInContentView) {
+                        shouldAllowNoteDrag = true
+                        break
+                    }
+                }
+            }
+
+            // If not found in editor, check the icon hit area
+            if !shouldAllowNoteDrag {
+                shouldAllowNoteDrag = notes.contains(where: { note in
+                    let notePoint = note.point(in: canvas)
+                    return noteIconHitArea(at: notePoint).contains(loc)
+                })
+            }
+
+            if shouldAllowNoteDrag {
                 return true
             }
 
