@@ -110,6 +110,9 @@ class ProjectListViewModel: ObservableObject {
     }
     
     func closeProject() {
+         // Dismiss keyboard to prevent layout issues when navigating back
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+
         // Stop timer when leaving project view
         stopTimerIfNeeded()
 
