@@ -21,6 +21,7 @@ struct NoteEditorView: View {
             // Text editor - main content, white background
             TextEditor(text: $text)
                 .focused($isFocused)
+                .autocorrectionDisabled(true)
                 .font(.system(size: 12)) // Smaller font
                 .padding(4)
                 .background(Color.white)
