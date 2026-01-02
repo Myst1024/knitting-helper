@@ -85,7 +85,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 7BED8D882F00551100B59A22 /* Build configuration list for PBXProject "knitting helper" */;
+			buildConfigurationList = 7BED8D882F00551100B59A22 /* Build configuration list for PBXProject "Knitting Helper Row Counter & More" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -331,7 +331,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		7BED8D882F00551100B59A22 /* Build configuration list for PBXProject "knitting helper" */ = {
+		7BED8D882F00551100B59A22 /* Build configuration list for PBXProject "Knitting Helper Row Counter & More" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7BED8D962F00551200B59A22 /* Debug */,
