@@ -370,34 +370,18 @@ struct ProjectListHeader: View {
     
     var body: some View {
         ZStack {
-            // Outer glow effect
-            Circle()
-                .fill(LinearGradient.rainbowSubtle)
-                .frame(width: 110, height: 110)
-                .blur(radius: 8)
+
             
-            // Main circle with gradient
-            Circle()
-                .fill(LinearGradient.accent)
-                .frame(width: 100, height: 100)
+
             
-            // Inner highlight
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.3), Color.clear],
-                        startPoint: .topLeading,
-                        endPoint: .center
-                    )
-                )
-                .frame(width: 100, height: 100)
+
             
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 60))
-                .foregroundColor(.white)
+            Image("transparent yarnball")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 200, height: 200)
         }
-        .enhancedShadow(color: Color("AccentColor"), radius: 16, y: 8)
-        .padding(.top, 40)
+     
     }
 }
 
