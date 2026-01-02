@@ -222,9 +222,7 @@ struct PDFKitView: UIViewRepresentable {
             }
         }
 
-        // Update notes when they change (compare by ID and count)
-        // Skip if coordinator is currently syncing to binding to prevent recursive updates
-        if !context.coordinator.x {
+
             let coordinatorNotes = context.coordinator.getNotes()
 
             // Check if binding has different notes than coordinator
@@ -236,7 +234,7 @@ struct PDFKitView: UIViewRepresentable {
                 context.coordinator.loadNotes(notes)
                 context.coordinator.syncNoteOverlay()
             }
-        }
+        
 
         // Update bookmark overlay when bookmarks change
         // Pass bookmarks directly to avoid binding issues

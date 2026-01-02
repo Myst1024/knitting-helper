@@ -743,7 +743,6 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
                     x: max(0, min(canvas.bounds.width, currentPoint.x + dx)),
                     y: max(0, min(canvas.bounds.height, currentPoint.y + dy))
                 )
-                let (page, xFrac, yFrac) = canvasPointToPageFraction(newPoint)
                 updateBookmarkPosition(bookmarkID: startModel.id, to: newPoint)
                 syncBookmarkOverlay()
             } else {
