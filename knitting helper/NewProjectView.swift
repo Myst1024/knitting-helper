@@ -167,53 +167,6 @@ struct NewProjectView: View {
                         }
                         .buttonStyle(.plain)
                         
-                        // Load sample PDF buttons
-                        HStack(spacing: 12) {
-                            Button {
-                                viewModel.loadSamplePDF(name: "sample-local-pdf")
-                            } label: {
-                                Text("Sample PDF")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(LinearGradient.accent)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(LinearGradient.accentLight)
-                                    )
-                            }
-                            
-                            Button {
-                                viewModel.loadSamplePDF(name: "short-pattern")
-                            } label: {
-                                Text("Short PDF")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(LinearGradient.accentTertiary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(LinearGradient.accentTertiaryLight)
-                                    )
-                            }
-                            
-                            Button {
-                                viewModel.loadSamplePDF(name: "big-pattern")
-                            } label: {
-                                Text("Big PDF")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(LinearGradient.accentWarm)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(LinearGradient.accentWarmLight)
-                                    )
-                            }
-                        }
                     }
                     .padding(.horizontal)
                 }
