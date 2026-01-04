@@ -464,7 +464,7 @@ class ProjectListViewModel: ObservableObject {
         // Save changes asynchronously
         Task {
             do {
-                try await Project.saveProjects(projects)
+                try Project.saveProjects(projects)
             } catch {
                 print("Failed to save note deletion: \(error)")
             }
