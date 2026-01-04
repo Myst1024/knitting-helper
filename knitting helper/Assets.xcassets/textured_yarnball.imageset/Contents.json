@@ -1,11 +1,11 @@
 {
   "images" : [
     {
-      "filename" : "transparent yarnball.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
+      "filename" : "knitting logo.png",
       "idiom" : "universal",
       "scale" : "2x"
     },

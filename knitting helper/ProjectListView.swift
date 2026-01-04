@@ -34,10 +34,10 @@ struct ProjectListView: View {
                     
                     // Title and description
                     VStack(spacing: 8) {
-                        Text(projects.isEmpty ? "Welcome to Knitting Helper" : "Your Projects")
+                        Text(projects.isEmpty ? "Welcome to \n Knitting & Crochet Helper" : "Your Projects")
                             .font(.title2)
                             .fontWeight(.bold)
-                            .foregroundColor(Color("AppText"))
+                            .foregroundColor(Color("AppText")).multilineTextAlignment(.center)
                         
                         if projects.isEmpty {
                             Text("Create a project to get started")
@@ -376,7 +376,7 @@ struct ProjectListHeader: View {
             
 
             
-            Image("transparent yarnball")
+            Image("textured_yarnball")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 200, height: 200)

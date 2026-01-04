@@ -265,7 +265,7 @@ struct ContentView: View {
                 ))
             }
         }
-        .navigationTitle(viewModel.currentProject?.name ?? "Knitting Helper")
+        .navigationTitle(viewModel.currentProject?.name ?? "Knitting & Crochet Helper")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if viewModel.currentProject != nil {
