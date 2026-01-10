@@ -1079,8 +1079,6 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
     }
     
     func closeNoteEditor(for noteID: UUID, skipBindingSync: Bool = false) {
-        syncNoteOverlay()
-
         // Save the current size to the note model before closing
         if let editorView = noteEditorViews[noteID] {
             let size = editorView.frame.size
@@ -1098,6 +1096,8 @@ class PDFViewCoordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDel
             noteEditorViews.removeValue(forKey: noteID)
         }
         noteEditorHostingControllers.removeValue(forKey: noteID)
+
+        syncNoteOverlay()
     }
     
     func updateNoteEditorPosition(for noteID: UUID) {
