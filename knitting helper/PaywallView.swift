@@ -35,9 +35,9 @@ struct PaywallView: View {
 
                 VStack(spacing: 20) {
                     VStack(spacing: 12) {
-                        featureRow(icon: "bookmark.fill", title: "Bookmarks", subtitle: "Save your place across PDFs")
-                        featureRow(icon: "highlighter", title: "Color Highlights", subtitle: "Mark rows with custom colors")
-                        featureRow(icon: "note.text", title: "Notes", subtitle: "Keep project notes in one place")
+                        featureRow(icon: "note.text", title: "Notes", subtitle: "Take notes right in your projects")
+                        featureRow(icon: "bookmark.fill", title: "Bookmarks", subtitle: "Jump to important sections quickly")
+                        featureRow(icon: "number.circle.fill", title: "Unlimited Counters", subtitle: "Add as many counters as you need")
                     }
                     .padding()
                     .background(surfaceColor.opacity(0.2))

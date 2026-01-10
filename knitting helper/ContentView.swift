@@ -97,10 +97,16 @@ struct ContentView: View {
                     set: { viewModel.updateCurrentProjectCounters($0) }
                 ),
                 onAddCounter: {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        viewModel.addCounterToCurrentProject()
+                    // Free users can have 1 counter; need premium for additional counters
+                    let currentCounterCount = viewModel.currentProject?.counters.count ?? 0
+                    if currentCounterCount >= 1 && !purchaseManager.hasPremium {
+                        purchaseManager.isPaywallPresented = true
+                    } else {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            viewModel.addCounterToCurrentProject()
+                        }
                     }
                 }
             )
@@ -136,7 +142,11 @@ struct ContentView: View {
                 .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
 
                 Button {
-                    viewModel.shouldAddNote = true
+                    if purchaseManager.hasPremium {
+                        viewModel.shouldAddNote = true
+                    } else {
+                        purchaseManager.isPaywallPresented = true
+                    }
                 } label: {
                     ZStack {
                         Circle()
