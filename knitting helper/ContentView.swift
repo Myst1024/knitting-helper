@@ -339,7 +339,7 @@ struct ContentView: View {
         .sheet(isPresented: $purchaseManager.isPaywallPresented) {
             PaywallView(purchaseManager: purchaseManager, product: purchaseManager.product)
                 .task { await purchaseManager.refreshProducts() }
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $viewModel.showNewProjectView) {

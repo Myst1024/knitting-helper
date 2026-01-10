@@ -25,13 +25,14 @@ struct PaywallView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
+                Spacer()
                 Text("Unlock Premium")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundColor(.white)
                     .shadow(color: .black.opacity(0.25), radius: 8, x: 0, y: 4)
-                    .padding(.top, 20)
+                    .padding(.bottom, 20)
+
                 
-                Spacer()
 
                 VStack(spacing: 20) {
                     VStack(spacing: 12) {
@@ -85,8 +86,9 @@ struct PaywallView: View {
                     }
                     .padding(.bottom, 2)
                 }
+                Spacer()
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 16)
         }
     }
 
