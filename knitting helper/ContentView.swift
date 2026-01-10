@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import StoreKit
 
 // MARK: - Constants
 
@@ -20,6 +21,7 @@ private enum Constants {
 
 struct ContentView: View {
     @StateObject private var viewModel = ProjectListViewModel()
+    @StateObject private var purchaseManager = PurchaseManager()
 
     // Bookmark creation trigger (holds the name when creating)
     @State private var bookmarkNameToCreate: String? = nil
@@ -160,7 +162,11 @@ struct ContentView: View {
                 .enhancedShadow(color: Color("AccentColor"), radius: 12, y: 6)
 
                 Button {
-                    viewModel.showBookmarkList = true
+                    if purchaseManager.hasPremium {
+                        viewModel.showBookmarkList = true
+                    } else {
+                        purchaseManager.isPaywallPresented = true
+                    }
                 } label: {
                     ZStack {
                         Circle()
@@ -320,6 +326,48 @@ struct ContentView: View {
         NavigationStack {
             mainContent
         }
+        .sheet(isPresented: $purchaseManager.isPaywallPresented) {
+            if #available(iOS 17.0, *) {
+                if let product = purchaseManager.product {
+                    ProductView(product, prefersPromotionalIcon: true)
+                        .productViewStyle(.large)
+                } else {
+                    VStack(spacing: 16) {
+                        Text("Unlock Premium")
+                            .font(.title2)
+                            .bold()
+                        Button("Purchase") {
+                            Task { await purchaseManager.purchasePremium() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button("Not now") {
+                            purchaseManager.isPaywallPresented = false
+                        }
+                    }
+                    .padding()
+                    .task {
+                        await purchaseManager.refreshProducts()
+                    }
+                }
+            } else {
+                VStack(spacing: 16) {
+                    Text("Unlock Premium")
+                        .font(.title2)
+                        .bold()
+                    Text("Get access to bookmarks and more.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                    Button("Purchase") {
+                        Task { await purchaseManager.purchasePremium() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button("Not now") {
+                        purchaseManager.isPaywallPresented = false
+                    }
+                }
+                .padding()
+            }
+        }
         .sheet(isPresented: $viewModel.showNewProjectView) {
             NewProjectView(project: Binding(
                 get: { nil },
@@ -329,6 +377,10 @@ struct ContentView: View {
                     }
                 }
             ))
+        }
+        .task {
+            // Ensure entitlement reflects current state when view loads
+            await purchaseManager.updatePurchasedStatus()
         }
     }
     

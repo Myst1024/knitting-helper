@@ -224,7 +224,7 @@ struct ProjectCard: View {
                         BulletedList(items: buildProjectInfoItems(for: project))
 
                         if let lastWorkedOn = formatLastWorkedOnDate(project.lastWorkedOnDate) {
-                            Text(lastWorkedOn)
+                            Text("Last Opened:\u{00a0}" + lastWorkedOn)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -364,18 +364,11 @@ struct FlowLayout: Layout {
 }
 
 // MARK: - Project List Header
-
 struct ProjectListHeader: View {
     let isEmpty: Bool
     
     var body: some View {
         ZStack {
-
-            
-
-            
-
-            
             Image("textured_yarnball")
                 .resizable()
                 .scaledToFit()
