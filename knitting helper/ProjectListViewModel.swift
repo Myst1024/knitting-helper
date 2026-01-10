@@ -71,7 +71,12 @@ class ProjectListViewModel: ObservableObject {
     }
     
     func addProject(_ project: Project) {
-        projects.append(project)
+        var projectToAdd = project
+        // If a project with the same name exists, append " (1)" to the new project's name
+        if projects.contains(where: { $0.name == project.name }) {
+            projectToAdd.name = "\(project.name) (1)"
+        }
+        projects.append(projectToAdd)
         sortProjects() // Sort so newly created projects appear at top
         do {
             try Project.saveProjects(projects)
@@ -79,7 +84,7 @@ class ProjectListViewModel: ObservableObject {
             // Log error but continue - project is already in memory
             print("Failed to save projects: \(error)")
         }
-        currentProject = project
+        currentProject = projectToAdd
     }
     
     func openProject(_ project: Project) {
