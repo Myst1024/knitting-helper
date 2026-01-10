@@ -327,46 +327,10 @@ struct ContentView: View {
             mainContent
         }
         .sheet(isPresented: $purchaseManager.isPaywallPresented) {
-            if #available(iOS 17.0, *) {
-                if let product = purchaseManager.product {
-                    ProductView(product, prefersPromotionalIcon: true)
-                        .productViewStyle(.large)
-                } else {
-                    VStack(spacing: 16) {
-                        Text("Unlock Premium")
-                            .font(.title2)
-                            .bold()
-                        Button("Purchase") {
-                            Task { await purchaseManager.purchasePremium() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        Button("Not now") {
-                            purchaseManager.isPaywallPresented = false
-                        }
-                    }
-                    .padding()
-                    .task {
-                        await purchaseManager.refreshProducts()
-                    }
-                }
-            } else {
-                VStack(spacing: 16) {
-                    Text("Unlock Premium")
-                        .font(.title2)
-                        .bold()
-                    Text("Get access to bookmarks and more.")
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                    Button("Purchase") {
-                        Task { await purchaseManager.purchasePremium() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button("Not now") {
-                        purchaseManager.isPaywallPresented = false
-                    }
-                }
-                .padding()
-            }
+            PaywallView(purchaseManager: purchaseManager, product: purchaseManager.product)
+                .task { await purchaseManager.refreshProducts() }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $viewModel.showNewProjectView) {
             NewProjectView(project: Binding(

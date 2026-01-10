@@ -83,4 +83,12 @@ final class PurchaseManager: ObservableObject {
             }
         }
     }
+
+    func restorePurchases() async {
+        do {
+            try await AppStore.sync()
+        } catch {
+        }
+        await updatePurchasedStatus()
+    }
 }
